@@ -456,60 +456,211 @@ app.get('/api/industries', (req, res) => {
   res.json(result);
 });
 
+// ========== 同步进度事件 ==========
+const { EventEmitter } = require('events');
+const syncEvents = new EventEmitter();
+syncEvents.setMaxListeners(50);
+let syncRunning = false;
+
+function emitProgress(stage, message, percent, extra = {}) {
+  const payload = JSON.stringify({ stage, message, percent, time: dayjs().format('HH:mm:ss'), ...extra });
+  console.log('[sync]', payload);
+  syncEvents.emit('progress', payload);
+}
+
+// SSE 进度订阅端点
+app.get('/api/sync/progress', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(`retry: 3000\n`);
+  // 发送当前状态
+  res.write(`data: ${JSON.stringify({ type:'status', running: syncRunning, time: dayjs().format('HH:mm:ss') })}\n\n`);
+  const onProgress = (data) => { res.write(`data: ${data}\n\n`); };
+  syncEvents.on('progress', onProgress);
+  req.on('close', () => { syncEvents.removeListener('progress', onProgress); });
+});
+
 /**
  * POST /api/sync
- * 手动触发数据同步和评分
+ * 触发数据同步和评分（通过SSE推送进度）
  */
 app.post('/api/sync', async (req, res) => {
-  res.json({ status: 'started', message: '数据同步已在后台启动' });
+  if (syncRunning) {
+    return res.json({ status: 'running', message: '同步正在进行中' });
+  }
+  syncRunning = true;
+  res.json({ status: 'started', message: '数据同步已启动' });
+  
   // 异步执行
-  setTimeout(async () => {
+  (async () => {
     try {
-      console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 定时同步开始');
-      const codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code);
+      emitProgress('init', '开始同步数据...', 0);
+      let codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code);
       
-      // 更新行情
-      const quotes = await tq.getQuickStockList(codes);
-      const today = dayjs().format('YYYYMMDD');
-      const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
-      const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st,r.total_mv,r.circ_mv,r.updated_at); });
-      insInfo(quotes.map(q => ({code:q.code,name:q.name,market:q.market,is_st:q.is_st,total_mv:q.total_mv,circ_mv:q.circ_mv,updated_at:dayjs().format('YYYY-MM-DD HH:mm:ss')})));
-      
-      // 更新K线（最近一周）
-      const weekAgo = dayjs().subtract(7, 'day').format('YYYYMMDD');
-      for (const code of codes.slice(0, 30)) {
-        const klines = await tq.getDailyKline(code, dayjs(weekAgo).format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD'));
-        if (klines.length > 0) {
-          const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-          const kins = db.transaction((rows) => { for(const k of rows) kstmt.run(k.code,k.trade_date,k.open,k.close,k.high,k.low,k.volume,k.amount,k.amplitude,k.pct_chg,k.chg,k.turnover); });
-          kins(klines);
-        }
-        await tq.sleep(100);
+      if (codes.length === 0) {
+        // 首次同步：拉取热门股票池
+        emitProgress('list', '数据库为空，加载热门股票池...', 5);
+        const hotCodes = [
+          'sh600519','sz000858','sh601318','sh600036','sz000333','sh600276',
+          'sz300750','sh601012','sh600900','sh601899','sz002594','sh601166',
+          'sh600030','sz000001','sh600887','sh601398','sh601288','sh600000',
+          'sh601988','sh600050','sz000725','sh600585','sh601668','sh601390',
+          'sz002475','sz300059','sh600438','sz002352','sh601888','sh600309',
+          'sh603288','sz000568','sz000596','sh600809','sz300124','sz002415',
+          'sh603501','sh688981','sh688012','sh688256','sz300760','sz002241',
+          'sh600048','sh601628','sh601601','sh600104','sh601857','sh600028',
+          'sh601088','sh600111','sh600547','sh601225','sz002460','sz300274',
+        ];
+        codes = hotCodes;
       }
       
-      // 重算技术指标（只算最近更新的K线）
-      // 简化：对所有股票算
+      // 1. 更新行情
+      emitProgress('quote', `正在拉取 ${codes.length} 支股票实时行情...`, 10);
+      const quotes = await tq.getQuickStockList(codes);
+      const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,pe,updated_at) VALUES (?,?,?,?,?,?,?,?)`);
+      const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st||0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('sh')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv,pe:q.pe})));
+      emitProgress('quote', `行情更新完成：${quotes.length} 支`, 25);
+      
+      // 2. 更新K线（最近7天，全量codes但每批更新）
+      emitProgress('kline', `更新K线数据...`, 30);
+      const klineStart = dayjs().subtract(60,'day').format('YYYY-MM-DD');
+      const klineEnd = dayjs().format('YYYY-MM-DD');
+      const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+      let klineCount = 0;
+      const klineCodes = codes.slice(0, 100);
+      for (let i = 0; i < klineCodes.length; i++) {
+        const code = klineCodes[i];
+        try {
+          const klines = await tq.getDailyKline(code, klineStart, klineEnd);
+          if (klines.length > 0) {
+            const kins = db.transaction((rows) => { for(const k of rows) kstmt.run(k.code,k.trade_date,k.open,k.close,k.high,k.low,k.volume,k.amount,k.amplitude,k.pct_chg,k.chg,k.turnover); });
+            kins(klines);
+            klineCount += klines.length;
+          }
+        } catch(e) {}
+        if (i % 10 === 0) {
+          const pct = 30 + Math.floor((i / klineCodes.length) * 25);
+          emitProgress('kline', `K线: ${i+1}/${klineCodes.length} (${klineCount}条)`, pct);
+        }
+        await tq.sleep(80);
+      }
+      emitProgress('kline', `K线更新完成：${klineCount} 条`, 55);
+      
+      // 3. 计算技术指标
+      emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', 60);
       const allCodes = db.prepare('SELECT DISTINCT code FROM daily_kline').all().map(r => r.code);
-      for (const code of allCodes) {
+      let indCount = 0;
+      for (let i = 0; i < allCodes.length; i++) {
+        const code = allCodes[i];
         const ks = db.prepare(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`).all(code);
         if (ks.length < 60) continue;
-        const closes = ks.map(k=>k.close), highs = ks.map(k=>k.high), lows = ks.map(k=>k.low), volumes = ks.map(k=>k.volume);
         const inds = calcAllIndicators(ks);
         const istmt = db.prepare(`INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-        const iins = db.transaction((rows) => {
-          for(const r of rows) if(r.ma5!==null) istmt.run(code,r.trade_date,r.ma5,r.ma10,r.ma20,r.ma60,r.ma120,r.ma250,r.vol_ma5,r.vol_ma20,r.macd_dif,r.macd_dea,r.macd_bar,r.rsi6,r.rsi14,r.kdj_k,r.kdj_d,r.kdj_j,r.boll_upper,r.boll_mid,r.boll_lower);
-        });
+        const iins = db.transaction((rows) => { for(const r of rows) if(r.ma5!==null) istmt.run(code,r.trade_date,r.ma5,r.ma10,r.ma20,r.ma60,r.ma120,r.ma250,r.vol_ma5,r.vol_ma20,r.macd_dif,r.macd_dea,r.macd_bar,r.rsi6,r.rsi14,r.kdj_k,r.kdj_d,r.kdj_j,r.boll_upper,r.boll_mid,r.boll_lower); });
         iins(inds);
+        indCount++;
+        if (i % 20 === 0) {
+          const pct = 60 + Math.floor((i / allCodes.length) * 15);
+          emitProgress('indicator', `指标: ${i+1}/${allCodes.length}`, pct);
+        }
       }
+      emitProgress('indicator', `技术指标计算完成：${indCount} 支`, 75);
       
-      // 重算评分
+      // 4. 计算评分
+      emitProgress('score', '计算多因子评分...', 80);
       await scoreAllStocks(false);
+      emitProgress('score', '评分完成', 90);
       
+      // 5. 计算拥挤度
+      emitProgress('crowding', '计算拥挤度...', 93);
+      try { calcAllCrowding(); } catch(e) { console.log('crowding error:', e.message); }
+      emitProgress('crowding', '拥挤度计算完成', 97);
+      
+      emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线 / ${indCount}支评分`, 100);
       console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 同步完成');
     } catch(e) {
-      console.error('同步失败:', e.message);
+      emitProgress('error', '同步失败: ' + e.message, -1);
+      console.error('同步失败:', e);
+    } finally {
+      syncRunning = false;
+      setTimeout(() => syncEvents.emit('progress', JSON.stringify({ type:'done', time: dayjs().format('HH:mm:ss') })), 500);
     }
+  })();
+});
+
+// ========== 短线策略 API ==========
+const { calcShortSignal, calcAllShortSignals, getShortOpportunities } = require('./src/strategies/short_term');
+
+// GET /api/short/opportunities - 短线机会列表
+app.get('/api/short/opportunities', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 30;
+    const signal = req.query.signal || '';
+    const minScore = parseInt(req.query.minScore) || 60;
+    let opps = getShortOpportunities({ limit, signal, minScore });
+    // 如果没有现成结果，触发一次计算
+    if (opps.length === 0) {
+      try { calcAllShortSignals(); opps = getShortOpportunities({ limit, signal, minScore }); } catch(e){}
+    }
+    res.json({ date: dayjs().format('YYYY-MM-DD'), count: opps.length, data: opps });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/short/calc - 手动触发短线信号计算
+app.post('/api/short/calc', (req, res) => {
+  res.json({ status: 'started' });
+  setTimeout(() => {
+    try { calcAllShortSignals(); } catch(e) { console.error('短线计算失败:', e.message); }
   }, 100);
+});
+
+// GET /api/short/stock/:code - 单只股票短线信号
+app.get('/api/short/stock/:code', (req, res) => {
+  try {
+    const sig = calcShortSignal(req.params.code);
+    res.json(sig || { signal: 'nodata' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ========== 加密货币 API ==========
+const binance = require('./src/data/binance');
+
+app.get('/api/crypto/market', async (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({type:'start', total: binance.HOT_PAIRS.length})}\n\n`);
+    const results = [];
+    for (let i = 0; i < binance.HOT_PAIRS.length; i++) {
+      try {
+        const r = await binance.analyzeSymbol(binance.HOT_PAIRS[i]);
+        if (r) {
+          results.push(r);
+          res.write(`data: ${JSON.stringify({type:'data', item:r, done:i+1, total: binance.HOT_PAIRS.length})}\n\n`);
+        }
+      } catch(e) {}
+      await new Promise(r=>setTimeout(r,80));
+    }
+    results.sort((a,b) => Math.abs(50-b.score) - Math.abs(50-a.score));
+    res.write(`data: ${JSON.stringify({type:'done', data:results})}\n\n`);
+    res.end();
+  } catch(e) { res.status(500).json({error: e.message}); }
+});
+
+app.get('/api/crypto/ticker/:symbol', async (req, res) => {
+  try {
+    const t = await binance.getTicker(req.params.symbol.toUpperCase()+'USDT');
+    const klines = await binance.getKlines(req.params.symbol.toUpperCase()+'USDT','1d',100);
+    const ind = binance.calcIndicators(klines);
+    res.json({ticker: t, indicators: ind, klines: klines.slice(-60)});
+  } catch(e) { res.status(500).json({error: e.message}); }
 });
 
 // ========== 回测 API ==========
