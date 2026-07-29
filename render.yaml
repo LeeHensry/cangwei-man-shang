@@ -3,7 +3,7 @@ services:
     name: cangwei-man-shang
     env: node
     plan: free
-    buildCommand: bash render-build.sh
+    buildCommand: npm install && npm run build
     startCommand: node server.js
     healthCheckPath: /api/settings
-    autoDeploy: false
+    autoDeploy: true
