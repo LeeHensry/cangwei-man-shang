@@ -1010,6 +1010,18 @@ const BUILD_VERSION = Date.now().toString();
 function serveIndex(req, res) {
   const fs = require('fs');
   const indexPath = path.join(staticPath, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    // 构建产物不存在，返回部署中提示（fallback）
+    res.status(200).send('<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>仓位满上</title>'
+      + '<style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f5f7fa;color:#101828}'
+      + '.card{background:#fff;border-radius:12px;padding:40px;max-width:500px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.08)}'
+      + 'h1{font-size:24px;margin-bottom:8px}.sub{color:#667085;font-size:14px;line-height:1.7}'
+      + '.spin{display:inline-block;width:32px;height:32px;border:3px solid #eaecf0;border-top-color:#1677ff;border-radius:50%;animation:spin 0.8s linear infinite;margin:20px 0}'
+      + '@keyframes spin{to{transform:rotate(360deg)}}</style></head><body>'
+      + '<div class="card"><div class="spin"></div><h1>🥃 仓位满上 部署中</h1>'
+      + '<p class="sub">前端静态资源正在构建，请稍等 1-2 分钟后刷新页面…<br/>如果持续看到此页面，说明前端构建失败，请查看 Render Build Logs。</p></div></body></html>');
+    return;
+  }
   let html = fs.readFileSync(indexPath, 'utf-8');
   // 去掉我之前临时加的banner
   html = html.replace(/<div id="crowding-banner".*?<\/script>/s, '<div id="root"></div>');
