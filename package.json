@@ -1,0 +1,24 @@
+{
+  "name": "stock-advisor",
+  "version": "1.0.0",
+  "description": "基于多因子模型 + LLM辅助解读 + 贝叶斯持续优化的A股交易决策系统，输出可执行的买卖建议（关注/买入/卖出/减仓 + 价格 + 仓位 + 理由）。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "cd web && npm install && npm run build",
+    "dev:web": "cd web && npm run dev",
+    "postinstall": "cd web && npm install --omit=dev && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.18.1",
+    "better-sqlite3": "^13.0.1",
+    "cors": "^2.8.6",
+    "dayjs": "^1.11.21",
+    "express": "^5.2.1",
+    "iconv-lite": "^0.7.3",
+    "node-cron": "^4.6.0"
+  }
+}

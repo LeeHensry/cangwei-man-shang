@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股智能决策辅助系统 - 产品架构文档</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.7; background: #fafafa; }
+  h1 { font-size: 28px; border-bottom: 3px solid #e74c3c; padding-bottom: 12px; margin: 30px 0 20px; color: #c0392b; }
+  h2 { font-size: 22px; border-bottom: 2px solid #eee; padding-bottom: 8px; margin: 30px 0 16px; color: #2c3e50; }
+  h3 { font-size: 18px; margin: 24px 0 12px; color: #34495e; }
+  h4 { font-size: 16px; margin: 18px 0 10px; color: #555; }
+  p { margin: 10px 0; }
+  ul { margin: 10px 0 10px 24px; }
+  li { margin: 4px 0; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: "Fira Code", "Consolas", monospace; font-size: 13px; color: #c0392b; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 16px; border-radius: 6px; overflow-x: auto; margin: 14px 0; font-size: 13px; line-height: 1.5; }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th { background: #34495e; color: #fff; padding: 10px 12px; text-align: left; font-weight: 500; }
+  td { border: 1px solid #ddd; padding: 8px 12px; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  tr:hover td { background: #f0f7ff; }
+  strong { color: #c0392b; }
+  hr { border: none; border-top: 1px solid #eee; margin: 30px 0; }
+  @media print { body { max-width: 100%; background: #fff; } pre { white-space: pre-wrap; } }
+</style>
+</head>
+<body>
+<h1>A股智能决策辅助系统 - 产品架构文档</h1>
+<h2>产品定位</h2>
+<p>基于多因子模型 + LLM辅助解读 + 贝叶斯持续优化的A股交易决策系统，输出可执行的买卖建议（关注/买入/卖出/减仓 + 价格 + 仓位 + 理由）。</p>
+<h2>双策略体系</h2>
+<h3>策略A：价值投资长线（主策略，主人风格匹配）</h3>
+<ul>
+<li>核心：好公司 + 好价格 + 催化剂确认</li>
+<li>持仓周期：月~年级别</li>
+<li>仓位管理：金字塔建仓，单只上限20%</li>
+<li>卖出：高估/基本面恶化/更优标的</li>
+</ul>
+<h3>策略B：短线机会发现（辅助，主流量化短线）</h3>
+<ul>
+<li>核心：热点板块 + 资金推动 + 情绪共振 + 严格风控</li>
+<li>持仓周期：天~周级别</li>
+<li>仓位管理：单只5-10%，短线总仓位≤30%</li>
+<li>风控：-8%无条件止损，持仓不超过5个交易日</li>
+</ul>
+<h2>技术架构</h2>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                    输出层 Output                          │
+│  每日交易建议 · 持仓跟踪 · 风险预警 · 回测报告            │
+├─────────────────────────────────────────────────────────┤
+│                  决策层 Decision                          │
+│  ┌───────────┐ ┌───────────┐ ┌────────┐ ┌────────────┐  │
+│  │ 价值评分   │ │ 短线评分   │ │ 风控   │ │ 仓位管理   │  │
+│  │ 引擎      │ │ 引擎      │ │ 引擎   │ │ 模块       │  │
+│  └─────┬─────┘ └─────┬─────┘ └───┬────┘ └─────┬──────┘  │
+│        └──────┬──────┘           │            │          │
+│        ┌──────┴──────┐           │            │          │
+│        │  贝叶斯优化   │───────────┴────────────┘          │
+│        │  模块        │  (基于回测+实盘反馈,持续调优权重)   │
+│        └─────────────┘                                   │
+├─────────────────────────────────────────────────────────┤
+│                  因子层 Factors                           │
+│  价值因子 │ 技术因子 │ 资金因子 │ 情绪/政策因子(LLM辅助)   │
+├─────────────────────────────────────────────────────────┤
+│                  数据层 Data                              │
+│  AKShare(主) │ Baostock/Tushare(辅) │ 本地DuckDB存储     │
+│  盘前/盘后批量更新 + 盘中按需拉取实时行情                  │
+└─────────────────────────────────────────────────────────┘</code></pre>
+<h2>数据层设计</h2>
+<h3>数据源选型</h3>
+<table><tr><th>优先级</th><th>数据源</th><th>覆盖内容</th><th>说明</th></tr><tr><td>★★★</td><td>AKShare</td><td>全功能：行情/财报/估值/资金/板块/新闻/公告/外盘</td><td>主力数据源，开源免费</td></tr><tr><td>★★</td><td>Baostock</td><td>历史K线、基本面因子</td><td>数据稳定，适合回测补充</td></tr><tr><td>★</td><td>Tushare Pro</td><td>补充另类因子</td><td>免费积分有限，按需使用</td></tr></table>
+<h3>数据分类与更新频率</h3>
+<table><tr><th>数据类别</th><th>更新频率</th><th>存储方式</th></tr><tr><td>日K线/周K线/月K线</td><td>每日收盘后</td><td>DuckDB增量存储</td></tr><tr><td>实时行情</td><td>盘中按需拉取</td><td>内存临时缓存</td></tr><tr><td>财报/基本面</td><td>每季度更新</td><td>DuckDB</td></tr><tr><td>估值数据(PE/PB分位)</td><td>每日更新</td><td>DuckDB</td></tr><tr><td>北向资金/龙虎榜/两融</td><td>每日收盘后</td><td>DuckDB</td></tr><tr><td>资金流向</td><td>盘中+盘后</td><td>DuckDB</td></tr><tr><td>板块行情/涨停池</td><td>每日</td><td>DuckDB</td></tr><tr><td>新闻/公告/政策</td><td>盘前/盘后批量</td><td>文件+结构化JSON</td></tr><tr><td>外围市场</td><td>每日盘前</td><td>DuckDB</td></tr></table>
+<h2>因子层设计</h2>
+<h3>价值因子（长线引擎用）</h3>
+<table><tr><th>因子类别</th><th>权重</th><th>具体指标</th><th>说明</th></tr><tr><td>盈利能力</td><td>25%</td><td>ROE(3年均值)、毛利率、净利率、ROIC</td><td>越高越好，稳定性加权</td></tr><tr><td>成长性</td><td>20%</td><td>营收增速、净利润增速(3年CAGR)、PEG</td><td>持续增长加分</td></tr><tr><td>财务健康</td><td>20%</td><td>资产负债率、流动比率、经营现金流/净利润</td><td>排除爆雷风险</td></tr><tr><td>估值水平</td><td>15%</td><td>PE/PB/PS历史分位(10年)、相对行业折溢价</td><td>低估加分</td></tr><tr><td>行业地位</td><td>10%</td><td>行业龙头、市占率、护城河评分</td><td>龙头加分</td></tr><tr><td>分红能力</td><td>5%</td><td>股息率、连续分红年数</td><td>加分项</td></tr><tr><td>管理层质量</td><td>5%</td><td>股权质押率、大股东增减持、管理层稳定性</td><td>减项防御</td></tr></table>
+<p><strong>评分公式：</strong> 质量分 = Σ(因子标准化得分 × 权重)，满分100</p>
+<p><strong>入池门槛：</strong> 质量分 ≥ 70</p>
+<h3>技术因子（双引擎共用，侧重不同）</h3>
+<table><tr><th>因子</th><th>长线用途</th><th>短线用途</th></tr><tr><td>均线系统(MA5/10/20/60/120/250)</td><td>判断趋势方向、底部区间</td><td>多头排列确认、5日线止损</td></tr><tr><td>MACD</td><td>底部金叉确认</td><td>零轴上方金叉买入信号</td></tr><tr><td>成交量/量比</td><td>底部放量确认催化剂</td><td>放量突破(量比>2)核心信号</td></tr><tr><td>换手率</td><td>—</td><td>5-15%为活跃区间</td></tr><tr><td>布林带</td><td>触及下轨+收窄判断底部</td><td>突破上轨确认强势</td></tr><tr><td>KDJ/RSI</td><td>超卖区域辅助判断底部</td><td>超买区域警示短线风险</td></tr><tr><td>筹码分布</td><td>判断密集支撑/压力位</td><td>突破筹码峰确认</td></tr><tr><td>缺口</td><td>—</td><td>跳空缺口强度判断</td></tr></table>
+<h3>资金因子</h3>
+<table><tr><th>因子</th><th>长线用途</th><th>短线用途</th></tr><tr><td>北向资金</td><td>连续净买入作为催化剂</td><td>—</td></tr><tr><td>主力资金流向</td><td>中长期资金趋势</td><td>当日净流入排名</td></tr><tr><td>龙虎榜</td><td>机构持续买入跟踪</td><td>机构/知名游资席位加分</td></tr><tr><td>融资融券</td><td>融资余额趋势</td><td>融资突增+放量警惕见顶</td></tr><tr><td>大宗交易</td><td>折价率高警惕</td><td>—</td></tr><tr><td>大股东增减持</td><td>增持加分/减持减分</td><td>大幅减持直接排除</td></tr></table>
+<h3>情绪/政策因子（LLM辅助，非实时）</h3>
+<table><tr><th>场景</th><th>LLM任务</th><th>触发时机</th><th>输出</th></tr><tr><td>政策解读</td><td>央行/财政/行业政策影响分析</td><td>盘前批量处理</td><td>利好/利空、影响行业、力度(1-5星)</td></tr><tr><td>公告解读</td><td>定增/减持/业绩预告/重组等</td><td>盘前批量处理</td><td>影响方向(-1~+1)、影响程度</td></tr><tr><td>重大突发</td><td>盘中重大新闻快速分析</td><td>盘中触发(跌幅>2%/涨停/跌停)</td><td>紧急利好/利空提示</td></tr><tr><td>外围影响</td><td>隔夜美股/黄金/原油/汇率影响</td><td>盘前</td><td>对当日开盘的影响预判</td></tr><tr><td>题材纯度</td><td>判断个股与热点概念的相关性</td><td>板块扫描时</td><td>纯度评分(0-100%)</td></tr></table>
+<p><strong>LLM调用策略：</strong></p>
+<ul>
+<li>盘前（8:00-9:00）：批量处理昨夜公告、新闻、外盘分析</li>
+<li>盘后（15:30-16:30）：批量处理当日重要公告、龙虎榜解读</li>
+<li>盘中：仅监控大盘涨跌停、持仓股重大波动（阈值触发）</li>
+</ul>
+<h2>决策层设计</h2>
+<h3>买入信号逻辑（价值长线）</h3>
+<pre><code>买入信号 = 质量分≥70 AND 估值分≤30 AND (催化剂满足≥1项)
+
+催化剂包括：
+  1. 最近一季业绩超预期（增速加速）
+  2. 北向资金连续5日净买入
+  3. 行业政策利好（LLM评分≥4星）
+  4. 技术面底部放量突破（成交量20日均量1.5倍+突破20日线）
+  5. PE/PB创近5年新低后企稳
+
+建仓节奏：
+  - 首次建仓：30%仓位
+  - 每下跌5%：加仓20%
+  - 最多加仓3次，单只总仓位≤20%</code></pre>
+<h3>买入信号逻辑（短线机会）</h3>
+<pre><code>短线信号 = 板块热度≥70 AND 个股短线分≥75 AND 风控放行
+
+板块热度评分：
+  - 板块涨幅≥2%：25分
+  - 板块内≥3只涨停：25分
+  - 主力资金净流入板块前5：20分
+  - 有消息/政策催化(LLM确认)：20分
+  - 连续2日活跃(非一日游)：10分
+
+风控条件：
+  - 大盘未处于暴跌状态(沪深300跌幅&lt;2%)
+  - 短线总仓位&lt;30%
+  - 近期无连续亏损冷静期</code></pre>
+<h3>卖出信号逻辑</h3>
+<table><tr><th>策略</th><th>卖出条件</th><th>操作</th></tr><tr><td>价值长线</td><td>估值分≥85（高估）</td><td>减仓50%</td></tr><tr><td>价值长线</td><td>估值分≥95 或 PE创历史新高</td><td>清仓</td></tr><tr><td>价值长线</td><td>基本面恶化（质量分降至50以下）</td><td>评估后清仓</td></tr><tr><td>价值长线</td><td>发现更优标的（评分更高+估值更低）</td><td>换仓</td></tr><tr><td>短线</td><td>止损线（买入价-8%）</td><td>无条件清仓</td></tr><tr><td>短线</td><td>跌破5日线</td><td>减仓50%</td></tr><tr><td>短线</td><td>冲高放量滞涨/板块退潮</td><td>清仓</td></tr><tr><td>短线</td><td>持仓超过5个交易日</td><td>强制评估，弱则清</td></tr></table>
+<h3>仓位管理模块</h3>
+<pre><code>总仓位动态调整（基于沪深300估值分位）：
+  - 极度低估（PE分位&lt;20%）：总仓位80-100%
+  - 低估（20-40%）：总仓位60-80%
+  - 合理（40-60%）：总仓位40-60%
+  - 偏高（60-80%）：总仓位20-40%
+  - 高估（&gt;80%）：总仓位0-20%
+
+仓位分配：
+  - 长线仓位占比：70-90%（根据估值调整）
+  - 短线仓位占比：10-30%（行情好时增加）
+  - 现金：始终保留≥10%应对极端机会</code></pre>
+<h3>风控引擎（硬约束，凌驾所有信号）</h3>
+<pre><code>全局风控规则：
+├── 单只股票仓位上限：长线20%，短线10%
+├── 短线总仓位上限：30%
+├── 单日新开仓不超过3只
+├── 短线止损：-8%无条件止损（自动提醒）
+├── 长线止损：-20%触发基本面重评
+├── 黑天鹅熔断：大盘跌幅&gt;3%时暂停新开仓
+├── 连续亏损保护：连续3笔短线止损→暂停短线1周
+├── 持仓集中度警告：单一行业仓位&gt;40%提醒分散
+└── 个股黑天鹅预警：持仓股突发利空(LLM判定)→紧急提示</code></pre>
+<h2>贝叶斯优化模块</h2>
+<h3>核心思路</h3>
+<p>用贝叶斯推理持续更新各因子的权重和阈值，而非固定不变。</p>
+<h3>具体机制</h3>
+<p>1. <strong>先验：</strong> 初始权重基于投资理论和经验设定（即上文的权重）</p>
+<p>2. <strong>观测：</strong> 每笔交易（建议买入后实际走势）作为观测数据</p>
+<ul>
+<li>买入后N日涨跌幅（长线N=60日，短线N=5日）</li>
+<li>信号触发时各因子的实际取值</li>
+<li>最大回撤（持有期间）</li>
+</ul>
+<p>3. <strong>后验更新：</strong></p>
+<ul>
+<li>对每个因子计算其信号预测能力（IC值，信息系数）</li>
+<li>预测能力强的因子权重上调，弱的下调</li>
+<li>阈值（如估值分30、质量分70）也根据历史最优调整</li>
+</ul>
+<p>4. <strong>更新频率：</strong> 每月一次批量更新，避免过度反应短期噪声</p>
+<p>5. <strong>防过拟合：</strong></p>
+<ul>
+<li>权重调整设上下限（每个因子权重不低于5%，不高于40%）</li>
+<li>用滚动窗口（近3年数据）而非全历史</li>
+<li>区分训练集/验证集</li>
+</ul>
+<h3>回测系统</h3>
+<ul>
+<li>回测区间：默认近5年</li>
+<li>回测指标：</li>
+<li>年化收益率、累计收益率</li>
+<li>最大回撤、夏普比率、Calmar比率</li>
+<li>胜率、盈亏比</li>
+<li>对比基准：沪深300指数</li>
+<li>回测维度：</li>
+<li>分年度回测（看不同市场环境下的表现）</li>
+<li>分市场状态（牛市/熊市/震荡市）</li>
+<li>长短策略分别回测+组合回测</li>
+</ul>
+<h2>输出层设计</h2>
+<h3>每日输出（盘前8:30推送）</h3>
+<pre><code>📊 A股决策日报 - 2026-07-24（周五）
+
+🌍 外盘与宏观：
+  - 美股：道指+0.3%，纳指-0.2%，科技股小幅承压
+  - 黄金：2350美元/盎司，微涨0.1%
+  - 汇率：USD/CNY 7.23，稳定
+  - ⚡ 政策：国常会提及新能源支持政策 ★★★★☆
+
+📈 市场状态：
+  - 沪深300 PE分位：42%（合理区间）
+  - 建议总仓位：50%（长线40% + 短线10%）
+
+🟢 买入建议：
+  1.【价值长线】XX股份(600XXX)
+     - 当前价：25.30 | 建议仓位：15%
+     - 买入区间：24.00-26.00
+     - 理由：ROE连续5年&gt;18%，PE分位12%（极度低估），
+            北向连续6日净买入，Q2业绩预告超预期+30%
+     - 止损：20.00（-20%基本面重评）
+     - 目标价：38.00（估值回归到中位数）
+
+  2.【短线机会】XX科技(002XXX)
+     - 当前价：32.50 | 建议仓位：8%
+     - 买入区间：32.00-33.00（今日盘中回踩）
+     - 理由：AI算力板块今日热度85分，该股放量突破前高，
+            主力净流入1.2亿，龙虎榜机构买入
+     - 止损：29.90（-8%）
+     - 止盈：37.00-38.00
+     - 持仓期限：3-5日
+
+🔴 持仓操作建议：
+  1. XX银行(601XXX)：PE分位升至82%，建议减仓50%
+  2. XX医药(300XXX)：跌破5日线，短线仓位建议止盈清仓
+
+📌 关注池（暂未到买点）：
+  - XX白酒(600XXX)：质量分85，但估值分45%，等待回调
+  - XX半导体(688XXX)：北向持续流入，但技术面未企稳
+
+⚠️ 风险提示：
+  - 持仓股XX地产(000XXX)：公告大股东减持2%，关注风险</code></pre>
+<h3>持仓跟踪（每日更新）</h3>
+<ul>
+<li>每只持仓股的当前盈亏、持仓天数、距止损/止盈距离</li>
+<li>重要公告/新闻提醒</li>
+</ul>
+<h2>LLM辅助模块具体实现</h2>
+<h3>技术方案</h3>
+<ul>
+<li>LLM接口：复用现有LLM Gateway</li>
+<li>处理流程：</li>
+</ul>
+<p>  1. AKShare拉取当日新闻/公告文本</p>
+<p>  2. 构建Prompt，要求结构化输出JSON</p>
+<p>  3. LLM返回结构化结果（情绪、影响标的、力度评分）</p>
+<p>  4. 结果存入DuckDB，作为情绪因子供评分引擎使用</p>
+<h3>Prompt示例结构</h3>
+<pre><code>你是一位A股资深分析师，请分析以下政策/新闻对A股市场的影响：
+
+新闻内容：{news_content}
+
+请以JSON格式输出：
+{
+  &quot;sentiment&quot;: &quot;positive|negative|neutral&quot;,
+  &quot;impact_score&quot;: 1-5,
+  &quot;affected_sectors&quot;: [&quot;板块名1&quot;, &quot;板块名2&quot;],
+  &quot;affected_stocks&quot;: [{&quot;code&quot;: &quot;代码&quot;, &quot;impact&quot;: &quot;正面/负面&quot;, &quot;reason&quot;: &quot;原因&quot;}],
+  &quot;summary&quot;: &quot;一句话总结影响&quot;
+}</code></pre>
+<h2>技术栈</h2>
+<table><tr><th>组件</th><th>选型</th><th>说明</th></tr><tr><td>语言</td><td>Python 3.10+</td><td>量化生态最成熟</td></tr><tr><td>数据获取</td><td>AKShare (主) + Baostock (辅)</td><td>全部免费</td></tr><tr><td>数据存储</td><td>DuckDB</td><td>分析型数据库，单文件，适合量化</td></tr><tr><td>数值计算</td><td>pandas + numpy</td><td>标准量化栈</td></tr><tr><td>技术指标</td><td>TA-Lib</td><td>技术指标计算库</td></tr><tr><td>回测框架</td><td>backtrader 或 自写轻量回测</td><td>先自写简单版，后续可升级</td></tr><tr><td>LLM</td><td>现有LLM Gateway (Claude)</td><td>盘前/盘后批量调用</td></tr><tr><td>任务调度</td><td>cron / APScheduler</td><td>盘前盘后定时任务</td></tr><tr><td>输出</td><td>Markdown日报 + (后续)Web界面</td><td>先Markdown推送到聊天，后续做UI</td></tr></table>
+<h2>MVP落地路径（分阶段）</h2>
+<h3>Phase 1：数据基础设施（第1-2周）</h3>
+<ul>
+<li>[ ] 搭建Python项目结构</li>
+<li>[ ] DuckDB数据库设计与建表</li>
+<li>[ ] AKShare数据接入：A股列表、日K线、基本面</li>
+<li>[ ] 每日数据增量更新脚本</li>
+<li>[ ] 技术指标计算（MA/MACD/量能等基础指标）</li>
+</ul>
+<h3>Phase 2：价值长线模型（第3-4周）</h3>
+<ul>
+<li>[ ] 价值因子计算实现（质量评分）</li>
+<li>[ ] 估值分位计算（近10年PE/PB百分位）</li>
+<li>[ ] 买入信号逻辑实现</li>
+<li>[ ] 卖出/减仓信号逻辑实现</li>
+<li>[ ] 仓位管理模块</li>
+</ul>
+<h3>Phase 3：回测系统（第5周）</h3>
+<ul>
+<li>[ ] 回测引擎实现</li>
+<li>[ ] 近5年价值策略回测</li>
+<li>[ ] 回测报告生成（收益率、回撤、夏普比率等）</li>
+<li>[ ] 初步验证策略有效性，调优参数</li>
+</ul>
+<h3>Phase 4：短线模型（第6周）</h3>
+<ul>
+<li>[ ] 板块热度扫描实现</li>
+<li>[ ] 短线因子计算与评分</li>
+<li>[ ] 短线买入/卖出信号逻辑</li>
+<li>[ ] 短线策略回测</li>
+</ul>
+<h3>Phase 5：LLM辅助模块（第7周）</h3>
+<ul>
+<li>[ ] 新闻/公告数据抓取</li>
+<li>[ ] LLM Prompt设计与结构化输出</li>
+<li>[ ] 情绪因子融入评分模型</li>
+<li>[ ] 外盘分析、政策解读自动化</li>
+</ul>
+<h3>Phase 6：风控与输出（第8周）</h3>
+<ul>
+<li>[ ] 风控引擎实现</li>
+<li>[ ] 每日Markdown日报生成</li>
+<li>[ ] 持仓跟踪功能</li>
+<li>[ ] 推送到聊天（WebChat/Telegram/飞书）</li>
+</ul>
+<h3>Phase 7：贝叶斯优化（Phase 6上线后迭代）</h3>
+<ul>
+<li>[ ] 实盘建议跟踪（记录建议与实际走势）</li>
+<li>[ ] 每月因子IC值计算</li>
+<li>[ ] 权重贝叶斯更新机制</li>
+<li>[ ] 防止过拟合的约束机制</li>
+</ul>
+<h3>Phase 8（远期）：Web UI可视化</h3>
+<ul>
+<li>[ ] 持仓看板</li>
+<li>[ ] 信号详情页</li>
+<li>[ ] 回测结果可视化</li>
+<li>[ ] 因子权重查看</li>
+</ul>
+<p>---</p>
+<p>*Last updated: 2026-07-24*</p>
+<p>*Status: 产品设计阶段，待开发*</p>
+</body>
+</html>
