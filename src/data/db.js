@@ -239,5 +239,26 @@ CREATE TABLE IF NOT EXISTS sync_log (
   PRIMARY KEY (table_name)
 )`);
 
+// 14. 短线信号表
+const hasShortSignals = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='short_signals'").get();
+if (!hasShortSignals) {
+db.exec(`
+CREATE TABLE IF NOT EXISTS short_signals (
+  code TEXT NOT NULL,
+  trade_date TEXT NOT NULL,
+  close REAL,
+  pct_chg REAL,
+  short_score REAL,
+  signal TEXT,
+  position_pct REAL,
+  stop_loss REAL,
+  target_price REAL,
+  reasons_json TEXT,
+  risks_json TEXT,
+  PRIMARY KEY (code, trade_date)
+)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_short_date ON short_signals(trade_date)`);
+}
+
 console.log('✅ 数据库初始化完成');
 module.exports = db;
