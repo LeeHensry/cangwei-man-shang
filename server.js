@@ -8,10 +8,9 @@ const path = require('path');
 const db = require('./src/data/db');
 const tq = require('./src/data/tencent');
 const { calcAllIndicators } = require('./src/factors/indicators');
-const { scoreAllStocks, syncFinancialData, classifyIndustry } = require('./src/strategies/value_score');
-const { getFinancialData } = require('./src/data/finance');
-const { getMarketOverview, getSectorMoneyFlow, getStockFlowSignals, calcMarketConcentration } = require('./src/data/money_flow');
-const { calcAllCrowding, calcAllSectorCrowding, getCrowdingSignal } = require('./src/factors/crowding');
+const { scoreAllStocks, classifyIndustry } = require('./src/strategies/value_score');
+const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
+const { calcAllCrowding, getCrowdingSignal } = require('./src/factors/crowding');
 const dayjs = require('dayjs');
 
 const app = express();
@@ -535,6 +534,21 @@ app.get('/api/db/stats', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 设置接口（内存存储，重启后恢复默认）
+const defaultSettings = {
+  valWeight: 35, qualWeight: 35, techWeight: 30,
+  newEconBonus: 5, oldPenalty: 8,
+  buyThreshold: 75, watchThreshold: 65, sellThreshold: 50,
+  stopLoss: 15, takeProfit: 40,
+  topCount: 10, autoSync: true, syncTime: '15:30',
+};
+let userSettings = { ...defaultSettings };
+app.get('/api/settings', (req, res) => res.json(userSettings));
+app.post('/api/settings', (req, res) => {
+  userSettings = { ...defaultSettings, ...(req.body || {}) };
+  res.json({ ok: true, settings: userSettings });
+});
+
 // 新闻代理（暂用模拟数据，后续接入真实财经API）
 app.get('/api/news', (req, res) => {
   const type = req.query.type || 'market';
@@ -1036,33 +1050,32 @@ app.listen(PORT, '0.0.0.0', async () => {
   if (stockCount < 50) {
     console.log('[init] 检测到数据库为空，开始首次数据同步(热门股票池)...');
     try {
-      // 热门股票池：核心指数+大白马+活跃股（约80支）
+      // 热门股票池：核心指数+大白马+活跃股
       const hotCodes = [
-        'sh000001','sz399001','sz399006','sh000300','sh000905','sh000688',  // 指数
-        'sh600519','sz000858','sh601318','sh600036','sz000333','sh600276',  // 大白马
+        'sh000001','sz399001','sz399006','sh000300','sh000905','sh000688',
+        'sh600519','sz000858','sh601318','sh600036','sz000333','sh600276',
         'sz300750','sh601012','sh600900','sh601899','sz002594','sh601166',
         'sh600030','sz000001','sh600887','sh601398','sh601288','sh600000',
         'sh601988','sh600050','sz000725','sh600585','sh601668','sh601390',
-        'sz002475','sz300059','sh601012','sh600438','sz002352','sh601888',
-        'sh600309','sh603288','sz000568','sz000596','sh600809','sh600703',
+        'sz002475','sz300059','sh600438','sz002352','sh601888',
+        'sh600309','sh603288','sz000568','sz000596','sh600809',
         'sz300124','sz002415','sh603501','sh688981','sh688012','sh688256',
         'sz300760','sz002241','sh600048','sh601628','sh601601','sh600104',
         'sh601857','sh600028','sh601088','sh600111','sh600547','sh601225',
         'sz002460','sz300274','sh601127','sh600745','sz002230','sz300015',
         'sh603259','sh600196','sz300769','sh688008','sz002049','sh603986',
-        'sh600570','sh600703','sz002371','sh688036','sh688111','sh688396',
+        'sh600570','sz002371','sh688036','sh688111','sh688396',
         'sh601138','sh603160','sz300496','sh603806','sz002129','sh600436',
       ];
-      const { syncStockList } = require('./src/data/sync');
       const stocks = await tq.getQuickStockList(hotCodes);
       console.log(`[init] 获取到 ${stocks.length} 支股票行情`);
       
       // 插入基本信息
       const insInfo = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,pe,updated_at) VALUES (?,?,?,?,?,?,?,?)`);
-      const trx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||r.code.startsWith('sh')?'SH':'SZ',0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      const trx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
       trx(stocks.filter(s=>s.code && s.name));
       
-      // 拉最近30天K线（简化：先只拉20支核心）
+      // 拉最近60天K线（只拉20支核心股票，避免首次启动太久）
       const klineCodes = hotCodes.slice(0, 20);
       let klineCount = 0;
       const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
@@ -1079,9 +1092,13 @@ app.listen(PORT, '0.0.0.0', async () => {
       }
       console.log(`[init] 插入 ${klineCount} 条K线`);
       
-      // 计算评分
-      await scoreAllStocks(false);
-      console.log('[init] 首次数据同步完成！');
+      // 计算评分（不等待，后台异步跑，避免阻塞服务启动）
+      scoreAllStocks(false).then(() => {
+        console.log('[init] 首次数据评分完成！');
+      }).catch(e => {
+        console.error('[init] 评分失败(非致命):', e.message);
+      });
+      console.log('[init] 首次数据同步完成（评分后台进行中）');
     } catch(e) {
       console.error('[init] 首次同步失败(非致命):', e.message);
     }

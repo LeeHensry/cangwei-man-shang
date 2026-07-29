@@ -37,8 +37,11 @@ const TencentStock = axios.create({
   }
 });
 
-// 代码转腾讯格式
+// 代码转腾讯格式（支持已带sh/sz/bj前缀的代码，幂等）
 function toTencentCode(code) {
+  if (!code) return code;
+  code = String(code).toLowerCase();
+  if (code.startsWith('sh') || code.startsWith('sz') || code.startsWith('bj')) return code;
   if (code.startsWith('6') || code.startsWith('5') || code.startsWith('9')) return `sh${code}`;
   if (code.startsWith('0') || code.startsWith('3') || code.startsWith('2')) return `sz${code}`;
   if (code.startsWith('8') || code.startsWith('4')) return `bj${code}`;

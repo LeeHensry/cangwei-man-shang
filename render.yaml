@@ -3,11 +3,10 @@ services:
     name: cangwei-man-shang
     env: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: NODE_ENV=development npm install && NODE_ENV=development npm run build
+    startCommand: NODE_ENV=production node server.js
     healthCheckPath: /
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: "10000"
