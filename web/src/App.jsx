@@ -1,41 +1,44 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Typography, Badge, Space, Dropdown, Avatar, Tooltip } from 'antd';
+import { Layout, Menu, Typography, Badge, Space } from 'antd';
 import {
   DashboardOutlined, ThunderboltOutlined, LineChartOutlined,
-  FundOutlined, BarChartOutlined, FileTextOutlined,
-  SettingOutlined, AppstoreOutlined, AlertOutlined,
+  FundOutlined, BarChartOutlined, SettingOutlined, AlertOutlined,
+  DollarCircleOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { AuthProvider, UserBadge } from './auth';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
 import Crowding from './pages/Crowding';
 import StockDetail from './pages/StockDetail';
 import Holdings from './pages/Holdings';
 import Backtest from './pages/Backtest';
-import News from './pages/News';
+import ShortTerm from './pages/ShortTerm';
+import Crypto from './pages/Crypto';
 import Settings from './pages/Settings';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-export default function App() {
+function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
 
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
-    { key: '/signals', icon: <ThunderboltOutlined />, label: '信号池' },
+    { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
+    { key: '/short', icon: <LineChartOutlined />, label: '⚡ 短线机会' },
+    { key: '/crypto', icon: <DollarCircleOutlined />, label: '🪙 加密货币' },
     { key: '/crowding', icon: <AlertOutlined />, label: '📡 拥挤度雷达' },
     { key: '/holdings', icon: <FundOutlined />, label: '自选持仓' },
     { key: '/backtest', icon: <BarChartOutlined />, label: '回测分析' },
-    { key: '/news', icon: <FileTextOutlined />, label: '消息面' },
     { key: '/settings', icon: <SettingOutlined />, label: '策略配置' },
   ];
 
   const getPageTitle = () => {
-    const map = { '/': '市场总览', '/signals': '信号池', '/crowding': '拥挤度雷达', '/holdings': '自选持仓',
-      '/backtest': '回测分析', '/news': '消息面', '/settings': '策略配置' };
+    const map = { '/': '市场总览', '/signals': '价值信号', '/short': '短线机会', '/crypto': '加密货币',
+      '/crowding': '拥挤度雷达', '/holdings': '自选持仓', '/backtest': '回测分析', '/settings': '策略配置' };
     for (const [path, title] of Object.entries(map)) {
       if (location.pathname.startsWith(path) && path !== '/') return title;
       if (location.pathname === path) return title;
@@ -88,22 +91,32 @@ export default function App() {
             <Text type="secondary" style={{ fontSize: 13, fontFamily: 'Inter, monospace' }}>
               {new Date().toLocaleDateString('zh-CN', { weekday: 'short', month: 'numeric', day: 'numeric' })}
             </Text>
+            <UserBadge />
           </Space>
         </Header>
         <Content style={{ padding: 24, minHeight: 'calc(100vh - 56px)' }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/signals" element={<Signals />} />
+            <Route path="/short" element={<ShortTerm />} />
+            <Route path="/crypto" element={<Crypto />} />
             <Route path="/crowding" element={<Crowding />} />
             <Route path="/stock/:code" element={<StockDetail />} />
             <Route path="/holdings" element={<Holdings />} />
             <Route path="/backtest" element={<Backtest />} />
-            <Route path="/news" element={<News />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </Content>
       </Layout>
     </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   );
 }
 // build Tue Jul 28 06:23:27 PM CST 2026
