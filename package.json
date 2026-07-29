@@ -1,12 +1,11 @@
 {
   "name": "stock-advisor",
   "version": "1.0.0",
-  "description": "基于多因子模型 + LLM辅助解读的A股交易决策系统，输出可执行的买卖建议（关注/买入/卖出/减仓 + 价格 + 仓位 + 理由）。",
+  "description": "🥃 仓位满上 Top Up - A股智能决策辅助系统",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "cd web && npm install --include=dev && npm run build",
-    "dev:web": "cd web && npm run dev"
+    "build": "cd web && npm install --production=false && npm run build"
   },
   "keywords": [],
   "author": "",
