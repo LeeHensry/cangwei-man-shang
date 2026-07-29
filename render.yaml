@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cangwei-man-shang
+    env: node
+    plan: free
+    buildCommand: |
+      npm install
+      cd web
+      npm install
+      npm run build
+      cd ..
+      ls -la web/dist/
+    startCommand: node server.js
+    healthCheckPath: /api/settings
+    autoDeploy: true
