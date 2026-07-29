@@ -28,7 +28,7 @@ npm start
 
 点击下方按钮一键部署：
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/LeeHensry/cangwei-man-shang)
 
 或手动：
 1. Fork 本仓库
