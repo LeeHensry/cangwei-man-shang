@@ -5,13 +5,51 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, RiseOutlined, FallOutlined,
-  WarningOutlined, CheckCircleOutlined, FundViewOutlined,
+  WarningOutlined, CheckCircleOutlined, FundViewOutlined, CloudDownloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { getPortfolio, addHolding, deleteHolding } from '../api';
 
 const { Title, Text } = Typography;
+
+// ===== 持仓本地备份（防止Render免费版重启丢失数据）=====
+const PORTFOLIO_BACKUP_KEY = 'cwms_portfolio_backup';
+
+function savePortfolioBackup(holdings) {
+  try {
+    // 只备份必要字段，不带计算字段
+    const backup = holdings.map(h => ({
+      code: h.code, name: h.name, buy_price: h.buy_price, shares: h.shares,
+      buy_date: h.buy_date, strategy: h.strategy || 'value',
+    }));
+    localStorage.setItem(PORTFOLIO_BACKUP_KEY, JSON.stringify(backup));
+  } catch(e) {}
+}
+
+async function restoreFromBackup() {
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_BACKUP_KEY);
+    if (!raw) return 0;
+    const backup = JSON.parse(raw);
+    if (!Array.isArray(backup) || backup.length === 0) return 0;
+    // 检查后端是否已有数据
+    const current = await getPortfolio();
+    if (current.holdings && current.holdings.length > 0) return 0; // 后端有数据，不需要恢复
+    // 后端空，逐条恢复
+    let restored = 0;
+    for (const h of backup) {
+      try {
+        await addHolding(h);
+        restored++;
+      } catch(e) {}
+    }
+    return restored;
+  } catch(e) {
+    return 0;
+  }
+}
+
 
 const signalMeta = {
   buy: { label: '买入', color: '#f04438', bg: '#fef3f2' },
@@ -38,7 +76,15 @@ export default function Holdings() {
   const load = async () => {
     setLoading(true);
     try {
-      setData(await getPortfolio());
+      // 先尝试从本地备份恢复（后端空时）
+      const restored = await restoreFromBackup();
+      if (restored > 0) {
+        message.success(`已从本地备份恢复 ${restored} 只持仓`, 3);
+      }
+      const d = await getPortfolio();
+      setData(d);
+      // 每次加载成功都备份一次
+      if (d.holdings) savePortfolioBackup(d.holdings);
     } catch(e) {
       message.error('加载失败');
     } finally {

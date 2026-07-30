@@ -210,5 +210,6 @@ module.exports = {
   getIndexQuotes,
   getSectorList,
   waitReady,
+  sleep: (ms) => new Promise(r => setTimeout(r, ms)),
   SOURCES,
 };
