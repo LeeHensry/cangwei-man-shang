@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Typography, Badge, Space } from 'antd';
+import { Layout, Menu, Typography, Badge, Space, Result, Button } from 'antd';
 import {
-  DashboardOutlined, ThunderboltOutlined, LineChartOutlined,
-  FundOutlined, BarChartOutlined, SettingOutlined, AlertOutlined,
-  DollarCircleOutlined,
+  DashboardOutlined,
+  ThunderboltOutlined,
+  RocketOutlined,
+  WalletOutlined,
+  RadarChartOutlined,
+  StarOutlined,
+  HistoryOutlined,
+  ControlOutlined,
 } from '@ant-design/icons';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { AuthProvider, UserBadge } from './auth';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { AuthProvider, UserBadge, useAuth } from './auth';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
 import Crowding from './pages/Crowding';
@@ -20,21 +25,53 @@ import Settings from './pages/Settings';
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
+// 403 无权限提示页（access 用户访问策略配置时显示）
+function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  if (!user) return null;
+  if (user.role !== 'admin') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <Result
+          status="403"
+          title="403"
+          subTitle={`抱歉，${user.username}，您没有访问【策略配置】模块的权限，请联系管理员开通。`}
+          extra={<Button type="primary" onClick={() => window.history.back()}>返回上一页</Button>}
+        />
+      </div>
+    );
+  }
+  return children;
+}
+
 function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  const menuItems = [
+  // 菜单配置：8个功能模块，icon 互不重复
+  // 市场总览    → DashboardOutlined  仪表盘
+  // 价值信号    → ThunderboltOutlined 闪电
+  // 短线机会    → RocketOutlined     火箭 🚀
+  // 加密货币    → WalletOutlined     钱包 💰
+  // 拥挤度雷达  → RadarChartOutlined 雷达图 📡
+  // 自选持仓    → StarOutlined       星星 ⭐
+  // 回测分析    → HistoryOutlined    历史/回溯
+  // 策略配置    → ControlOutlined    控制台（仅管理员可见）
+  const allMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
-    { key: '/short', icon: <LineChartOutlined />, label: '⚡ 短线机会' },
-    { key: '/crypto', icon: <DollarCircleOutlined />, label: '🪙 加密货币' },
-    { key: '/crowding', icon: <AlertOutlined />, label: '📡 拥挤度雷达' },
-    { key: '/holdings', icon: <FundOutlined />, label: '自选持仓' },
-    { key: '/backtest', icon: <BarChartOutlined />, label: '回测分析' },
-    { key: '/settings', icon: <SettingOutlined />, label: '策略配置' },
+    { key: '/short', icon: <RocketOutlined />, label: '⚡ 短线机会' },
+    { key: '/crypto', icon: <WalletOutlined />, label: '🪙 加密货币' },
+    { key: '/crowding', icon: <RadarChartOutlined />, label: '📡 拥挤度雷达' },
+    { key: '/holdings', icon: <StarOutlined />, label: '自选持仓' },
+    { key: '/backtest', icon: <HistoryOutlined />, label: '回测分析' },
+    { key: '/settings', icon: <ControlOutlined />, label: '策略配置', adminOnly: true },
   ];
+
+  // 普通用户隐藏策略配置菜单
+  const menuItems = allMenuItems.filter(item => !item.adminOnly || user?.role === 'admin');
 
   const getPageTitle = () => {
     const map = { '/': '市场总览', '/signals': '价值信号', '/short': '短线机会', '/crypto': '加密货币',
@@ -104,7 +141,8 @@ function AppShell() {
             <Route path="/stock/:code" element={<StockDetail />} />
             <Route path="/holdings" element={<Holdings />} />
             <Route path="/backtest" element={<Backtest />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings" element={<RequireAdmin><Settings /></RequireAdmin>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Content>
       </Layout>
@@ -119,4 +157,4 @@ export default function App() {
     </AuthProvider>
   );
 }
-// build Tue Jul 28 06:23:27 PM CST 2026
+// build Thu Jul 30 2026 - access key auth v1.1.0

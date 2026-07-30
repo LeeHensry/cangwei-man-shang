@@ -700,6 +700,19 @@ app.post('/api/settings', (req, res) => {
   res.json({ ok: true, settings: userSettings });
 });
 
+// 版本信息
+app.get('/api/version', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  let version = 'unknown';
+  try { version = fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); } catch(e) {}
+  res.json({
+    version,
+    name: '仓位满上 TopUp',
+    build_time: new Date().toISOString(),
+  });
+});
+
 // 新闻代理（暂用模拟数据，后续接入真实财经API）
 app.get('/api/news', (req, res) => {
   const type = req.query.type || 'market';
