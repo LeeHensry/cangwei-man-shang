@@ -570,7 +570,7 @@ app.post('/api/sync', async (req, res) => {
       const klineEnd = dayjs().format('YYYY-MM-DD');
       const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
       let klineCount = 0;
-      const klineCodes = codes.slice(0, 100);
+      const klineCodes = codes; // 拉取全量股票池K线（最多200只）
       for (let i = 0; i < klineCodes.length; i++) {
         const code = klineCodes[i];
         try {
@@ -1372,65 +1372,61 @@ app.listen(PORT, '0.0.0.0', async () => {
   // 1. 先确保有种子数据，避免页面空白
   ensureSeedData();
 
-  // 2. 初始化股票池（后台）
-  (async () => {
-    try {
-      // 检查股票池是否需要更新（空或超过7天）
-      const poolCount = db.prepare('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1').get().c;
-      const lastUpdate = db.prepare('SELECT MAX(updated_at) as t FROM stock_pool').get().t;
-      const needUpdate = poolCount < 100 || !lastUpdate || dayjs().diff(dayjs(lastUpdate), 'day') >= 7;
-      if (needUpdate) {
-        console.log('[init] 股票池为空或过期，开始更新股票池...');
-        const r = await stockPool.updateStockPool(200);
-        console.log(`[init] 股票池更新完成: ${r.total}只`);
-      } else {
-        console.log(`[init] 股票池已有 ${poolCount} 只，跳过更新`);
-      }
-    } catch(e) {
-      console.log('[init] 股票池初始化失败:', e.message);
-      // 兜底：直接把stock_info里的股票当池子
-      console.log('[init] 使用stock_info作为兜底股票池');
+  // 2. 初始化股票池（串行：先完成池子，再做行情更新）
+  try {
+    const poolCount = db.prepare('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1').get().c;
+    const lastUpdate = db.prepare('SELECT MAX(updated_at) as t FROM stock_pool').get().t;
+    const needUpdate = poolCount < 100 || !lastUpdate || dayjs().diff(dayjs(lastUpdate), 'day') >= 7;
+    if (needUpdate) {
+      console.log('[init] 股票池为空或过期，开始更新股票池...');
+      const r = await stockPool.updateStockPool(200);
+      console.log(`[init] 股票池更新完成: ${r.total}只`);
+    } else {
+      console.log(`[init] 股票池已有 ${poolCount} 只，跳过更新`);
     }
-  })();
+  } catch(e) {
+    console.log('[init] 股票池初始化失败:', e.message);
+  }
 
-  // 3. 后台尝试更新行情（API不通则静默失败，不阻塞服务）
+  // 3. 后台尝试更新行情（API不通则静默失败）
   (async () => {
     try {
       console.log('[init] 后台尝试更新行情...');
-      // 优先使用股票池，fallback到stock_info
       let codes = stockPool.getPoolCodes();
       if (codes.length === 0) {
-        codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code).filter(c => c.startsWith('sh') || c.startsWith('sz'));
+        codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code).filter(c => /^\d{6}$/ || c.startsWith('sh') || c.startsWith('sz'));
       }
       if (codes.length === 0) throw new Error('无股票代码');
       const quotes = await Promise.race([
         tq.getQuickStockList(codes.slice(0, 250)),
         new Promise((_, rej) => setTimeout(() => rej(new Error('行情拉取超时(20s)')), 20000)),
       ]);
-      // stock_info表无pe列，去掉pe
+      // stock_info表无pe列
       const insInfo = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
-      const tx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
-      tx(quotes.filter(s=>s.code && s.name).map(q => ({code:q.code,name:q.name,market:q.market,is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
-      // PE写入valuation表
+      const tx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(String(r.code).startsWith('6')?'SH':'SZ'),r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      tx(quotes.filter(s=>s.code && s.name).map(q => ({code:String(q.code).replace(/^(sh|sz|bj)/,''),name:q.name,market:q.market,is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
       const today = dayjs().format('YYYYMMDD');
       const vstmt = db.prepare(`INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`);
-      const vtx = db.transaction((rows) => { for(const r of rows) if(r.pe != null) vstmt.run(r.code, today, r.pe); });
+      const vtx = db.transaction((rows) => { for(const r of rows) if(r.pe != null) vstmt.run(String(r.code).replace(/^(sh|sz|bj)/,''), today, r.pe); });
       vtx(quotes.filter(q => q.code && q.pe != null));
       console.log(`[init] 行情更新完成: ${quotes.length} 支`);
 
-      // 4. 评分（如果评分过期则重新计算）
+      // 4. 评分
+      const poolCount = db.prepare('SELECT COUNT(*) FROM stock_pool WHERE in_pool=1').pluck().get() || 0;
+      const scoredCount = db.prepare('SELECT COUNT(DISTINCT code) FROM stock_score').pluck().get() || 0;
       const latest = db.prepare('SELECT MAX(trade_date) as d FROM stock_score').get().d;
-      if (!latest || latest < dayjs().subtract(3,'day').format('YYYYMMDD')) {
-        console.log('[init] 开始评分...');
+      const needScore = !latest || scoredCount < poolCount * 0.7 || latest < dayjs().subtract(3,'day').format('YYYYMMDD');
+      if (needScore) {
+        console.log(`[init] 开始评分（覆盖${scoredCount}/${poolCount}只）...`);
         await scoreAllStocks(false);
         console.log('[init] 评分完成');
       } else {
-        console.log(`[init] 评分数据已是最新(${latest})，跳过`);
+        console.log(`[init] 评分数据已是最新(${latest}, ${scoredCount}只)，跳过`);
       }
       await calcAllCrowding();
       console.log('[init] 拥挤度计算完成');
     } catch(e) {
-      console.log('[init] 行情更新跳过(可能海外节点受限):', e.message);
+      console.log('[init] 行情/评分更新跳过(可能API受限):', e.message);
     }
   })();
 });

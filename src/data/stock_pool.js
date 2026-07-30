@@ -46,7 +46,9 @@ async function updateStockPool(targetSize = 200) {
   console.log(`[pool] 待扫描股票: ${allCodes.length} 只`);
 
   // 2. 批量拉取行情（新浪/腾讯，自动选数据源）
-  const quotes = await ds.getQuickStockList(allCodes);
+  let quotes = await ds.getQuickStockList(allCodes);
+  // 统一code为纯6位（去掉sh/sz前缀）
+  quotes = quotes.map(q => ({ ...q, code: String(q.code).replace(/^(sh|sz|bj)/, '') }));
   console.log(`[pool] 成功获取行情: ${quotes.length} 只`);
 
   // 3. 拉取K线计算动量（近20日涨幅）
@@ -152,7 +154,7 @@ async function updateStockPool(targetSize = 200) {
 }
 
 /**
- * 获取当前股票池代码列表
+ * 获取当前股票池代码列表（返回纯6位码，不带sh/sz前缀，API调用时再转）
  */
 function getPoolCodes() {
   return db.prepare(`SELECT code, name FROM stock_pool WHERE in_pool = 1 ORDER BY pool_score DESC`).all().map(r => r.code);
@@ -162,16 +164,20 @@ function getPoolCodes() {
  * 添加股票到股票池（用户手动/搜索添加）
  */
 function addToPool(code, name, isManual = true) {
-  const tcode = toTencentCode(code);
+  const sixCode = toSixCode(code);
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
   db.prepare(`INSERT OR REPLACE INTO stock_pool
     (code, name, in_pool, is_manual, pool_score, pool_reason, updated_at, in_pool_date)
     VALUES (?, ?, 1, ?, 99, '手动添加', ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code=?), ?))`)
-    .run(tcode, name || code, isManual ? 1 : 0, now, tcode, dayjs().format('YYYY-MM-DD'));
-  return tcode;
+    .run(sixCode, name || code, isManual ? 1 : 0, now, sixCode, dayjs().format('YYYY-MM-DD'));
+  return sixCode;
 }
 
-// 代码格式规范化
+// 代码格式规范化 — 对外返回sh/sz前缀格式（给API用），内部db存纯6位
+function toSixCode(code) {
+  if (!code) return code;
+  return String(code).toLowerCase().replace(/^(sh|sz|bj)/, '').replace(/\.(ss|sz)$/i, '');
+}
 function toTencentCode(code) {
   if (!code) return code;
   code = String(code).toLowerCase();

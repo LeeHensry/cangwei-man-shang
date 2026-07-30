@@ -757,7 +757,11 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
 
 // ========== 批量评分 ==========
 async function scoreAllStocks(syncFinance = true, includeCrowding = true) {
-  const codes = db.prepare('SELECT code, name FROM stock_info WHERE is_st = 0').all();
+  // 优先从股票池取代码，fallback到stock_info
+  let codes = db.prepare('SELECT code, name FROM stock_pool WHERE in_pool = 1').all();
+  if (codes.length === 0) {
+    codes = db.prepare('SELECT code, name FROM stock_info WHERE is_st = 0').all();
+  }
   const today = dayjs().format('YYYYMMDD');
   const results = [];
   
