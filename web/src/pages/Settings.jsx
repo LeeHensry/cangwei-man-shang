@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Card, Typography, Row, Col, Slider, Switch, Button, Space, Form, Select, InputNumber,
   message, Divider, Tag, Statistic, Table, Alert, Descriptions, Progress, Modal, List,
+  Tooltip, Spin,
 } from 'antd';
 import {
   SettingOutlined, SaveOutlined, ReloadOutlined, DatabaseOutlined,
   CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SyncOutlined,
+  GlobalOutlined, ApiOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -32,6 +34,9 @@ export default function Settings() {
   const [syncError, setSyncError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [dbStats, setDbStats] = useState(null);
+  const [dsStatus, setDsStatus] = useState(null);
+  const [dsLoading, setDsLoading] = useState(false);
+  const [selectedDs, setSelectedDs] = useState('auto');
   const esRef = useRef(null);
 
   useEffect(() => {
@@ -45,8 +50,36 @@ export default function Settings() {
       ...saved,
     });
     loadStats();
+    loadDataSource();
     return () => { if (esRef.current) esRef.current.close(); };
   }, []);
+
+  const loadDataSource = async () => {
+    setDsLoading(true);
+    try {
+      const r = await fetch('/api/datasource').then(r => r.json());
+      setDsStatus(r);
+      setSelectedDs(r.current || 'auto');
+    } catch(e) {}
+    setDsLoading(false);
+  };
+
+  const handleSwitchDs = async (value) => {
+    try {
+      const r = await fetch('/api/datasource', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: value }),
+      }).then(r => r.json());
+      if (r.ok) {
+        message.success(`已切换到 ${r.label}`);
+        setSelectedDs(value);
+        await loadDataSource();
+      } else {
+        message.error(r.error || '切换失败');
+      }
+    } catch(e) { message.error(e.message); }
+  };
 
   const loadStats = async () => {
     try {
@@ -223,15 +256,69 @@ export default function Settings() {
         </Col>
 
         <Col span={12}>
+          <Card
+            title={<Space><GlobalOutlined />数据源</Space>}
+            extra={<Button size="small" icon={<ReloadOutlined />} onClick={loadDataSource} loading={dsLoading}>探测</Button>}
+          >
+            {dsLoading ? (
+              <div style={{textAlign:'center', padding:20}}><Spin /></div>
+            ) : dsStatus ? (
+              <>
+                <Form layout="vertical" size="small">
+                  <Form.Item label="当前数据源" style={{marginBottom:12}}>
+                    <Select value={selectedDs} onChange={handleSwitchDs} style={{width:'100%'}}>
+                      <Select.Option value="auto">🤖 自动选择（按网络连通性）</Select.Option>
+                      {Object.entries(dsStatus.sources).map(([k, s]) => (
+                        <Select.Option key={k} value={k} disabled={!s.ok}>
+                          <Space>
+                            <span>{s.label}</span>
+                            {s.ok ? <Tag color="green" style={{margin:0}}>可用({s.latency}ms)</Tag>
+                            : <Tag color="red" style={{margin:0}}>不可用</Tag>}
+                            {s.regions?.includes('overseas') && !s.regions?.includes('domestic') && <Tag color="blue" style={{margin:0}}>海外</Tag>}
+                            {s.regions?.includes('domestic') && !s.regions?.includes('overseas') && <Tag color="orange" style={{margin:0}}>国内</Tag>}
+                            {s.regions?.length === 2 && <Tag color="purple" style={{margin:0}}>全球</Tag>}
+                          </Space>
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Form>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  {Object.entries(dsStatus.sources).map(([k, s]) => (
+                    <div key={k} style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <Space size={6}>
+                        {s.ok ? <CheckCircleOutlined style={{color:'#52c41a'}}/> : <CloseCircleOutlined style={{color:'#f5222d'}}/>}
+                        <Text>{s.label}</Text>
+                        <Text type="secondary">
+                          ({s.regions?.map(r => r === 'domestic' ? '国内' : '海外').join('/')})
+                        </Text>
+                      </Space>
+                      <Text type={s.ok ? 'success' : 'danger'}>
+                        {s.ok ? `${s.latency}ms` : s.error?.substring(0, 25) || '连接失败'}
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+                <Divider style={{margin:'10px 0'}}/>
+                <Alert type="info" showIcon style={{fontSize:11}}
+                  message="国内部署选腾讯/新浪；海外部署（如Render）建议选Yahoo或自动选择。自动模式会自动探测最优数据源。"/>
+              </>
+            ) : (
+              <Text type="secondary">加载中...</Text>
+            )}
+          </Card>
+        </Col>
+
+        <Col span={12}>
           <Card title="关于仓位满上">
             <div style={{ lineHeight: 1.8, fontSize: 13 }}>
               <p><b>仓位满上 TopUp</b> - A股智能决策助手</p>
               <p style={{color:'#667085'}}>以价值投资为核心策略，结合多因子评分模型、资金面分析、技术面择时、量化拥挤度，为个人投资者提供客观的交易参考。</p>
               <Divider style={{margin:'8px 0'}}/>
               <Space direction="vertical" size={4} style={{width:'100%'}}>
-                <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">版本</Text><Text>v0.3.0</Text></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">版本</Text><Text>v1.1.1</Text></div>
                 <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">技术栈</Text><Text>Node.js + React + SQLite</Text></div>
-                <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">数据源</Text><Text>腾讯财经 · 东方财富</Text></div>
+                <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">数据源</Text><Text>腾讯/新浪/Yahoo（自动切换）</Text></div>
                 <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">提醒</Text><Tag color="warning">仅供参考，不构成投资建议</Tag></div>
               </Space>
             </div>

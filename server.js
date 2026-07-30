@@ -32,7 +32,9 @@ const fs = require('fs');
 })();
 
 const db = require('./src/data/db');
-const tq = require('./src/data/tencent');
+const ds = require('./src/data/datasources');
+// 兼容旧代码：tq.xxx → ds.xxx
+const tq = ds;
 const { calcAllIndicators } = require('./src/factors/indicators');
 const { scoreAllStocks, classifyIndustry } = require('./src/strategies/value_score');
 const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
@@ -744,6 +746,44 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+// ========== 数据源管理 ==========
+app.get('/api/datasource', async (req, res) => {
+  try {
+    const force = req.query.refresh === '1';
+    const status = await ds.getStatus(force);
+    const labelMap = { tencent: '腾讯财经', sina: '新浪财经', yahoo: 'Yahoo Finance' };
+    const activeSource = status.current === 'auto'
+      ? Object.entries(status.sources).find(([k,v])=>v.ok)?.[0] || 'sina'
+      : status.current;
+    res.json({
+      current: status.current,
+      configured: status.configured,
+      current_label: labelMap[activeSource] || '自动',
+      sources: Object.fromEntries(
+        Object.entries(status.sources).map(([k, v]) => [k, {
+          label: v.label,
+          regions: v.regions,
+          ok: v.ok,
+          latency: v.latency || null,
+          error: v.error || null,
+        }])
+      ),
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/datasource', async (req, res) => {
+  try {
+    const { source } = req.body;
+    const result = await ds.setSource(source);
+    res.json({ ok: true, ...result });
+  } catch(e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // 新闻代理（暂用模拟数据，后续接入真实财经API）
 app.get('/api/news', (req, res) => {
   const type = req.query.type || 'market';
@@ -1267,6 +1307,14 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('  时间: ' + dayjs().format('YYYY-MM-DD HH:mm:ss'));
   console.log('═══════════════════════════════════════');
   
+  // 0. 等待数据源初始化完成
+  try {
+    await ds.waitReady();
+    console.log(`[init] 📡 数据源: ${ds.getSource().label} (${ds.getSource().name})`);
+  } catch(e) {
+    console.log('[init] 数据源初始化失败:', e.message);
+  }
+
   // 1. 先确保有种子数据，避免页面空白
   ensureSeedData();
 
@@ -1280,9 +1328,15 @@ app.listen(PORT, '0.0.0.0', async () => {
         tq.getQuickStockList(codes.slice(0, 80)),
         new Promise((_, rej) => setTimeout(() => rej(new Error('行情拉取超时(15s)')), 15000)),
       ]);
-      const insInfo = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,pe,updated_at) VALUES (?,?,?,?,?,?,?,?)`);
-      const tx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),r.is_st||0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
-      tx(quotes.filter(s=>s.code && s.name).map(q => ({code:q.code,name:q.name,market:q.market,is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv,pe:q.pe})));
+      // stock_info表无pe列，去掉pe
+      const insInfo = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
+      const tx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      tx(quotes.filter(s=>s.code && s.name).map(q => ({code:q.code,name:q.name,market:q.market,is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
+      // PE写入valuation表
+      const today = dayjs().format('YYYYMMDD');
+      const vstmt = db.prepare(`INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`);
+      const vtx = db.transaction((rows) => { for(const r of rows) if(r.pe != null) vstmt.run(r.code, today, r.pe); });
+      vtx(quotes.filter(q => q.code && q.pe != null));
       console.log(`[init] 行情更新完成: ${quotes.length} 支`);
     } catch(e) {
       console.log('[init] 行情更新跳过(可能海外节点受限):', e.message);

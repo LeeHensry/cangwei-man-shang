@@ -28,4 +28,8 @@ export const saveSettings = (data) => api.post('/settings', data).then(r => r.da
 // 资讯
 export const getNews = (params) => api.get('/news', { params }).then(r => r.data);
 
+// 数据源
+export const getDataSource = () => api.get('/datasource').then(r => r.data);
+export const setDataSource = (source) => api.post('/datasource', { source }).then(r => r.data);
+
 export default api;

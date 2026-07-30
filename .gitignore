@@ -18,3 +18,4 @@ start-stock.sh
 tunnel.sh
 web/node_modules/
 web/dist/
+data/ds_config.json
