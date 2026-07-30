@@ -242,7 +242,10 @@ function calcQualityScore(code) {
     SELECT * FROM financial_indicator WHERE code = ? ORDER BY report_date DESC LIMIT 12
   `).all(code);
   
-  if (finData.length < 2) return null;
+  // 财务数据不足时返回中性分(避免完全没数据导致页面空白)，继续参与估值/技术评分
+  if (finData.length < 2) {
+    return { score: 50, method: 'no_financial_data', signals: ['⚠️ 财务数据不足，质量分为默认值'] };
+  }
   
   const stockInfo = db.prepare('SELECT name, total_mv FROM stock_info WHERE code = ?').get(code);
   const name = stockInfo?.name || '';

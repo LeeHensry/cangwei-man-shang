@@ -62,9 +62,9 @@ function AppShell() {
   const allMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
-    { key: '/short', icon: <RocketOutlined />, label: '⚡ 短线机会' },
-    { key: '/crypto', icon: <WalletOutlined />, label: '🪙 加密货币' },
-    { key: '/crowding', icon: <RadarChartOutlined />, label: '📡 拥挤度雷达' },
+    { key: '/short', icon: <RocketOutlined />, label: '短线机会' },
+    { key: '/crypto', icon: <WalletOutlined />, label: '加密货币' },
+    { key: '/crowding', icon: <RadarChartOutlined />, label: '拥挤度雷达' },
     { key: '/holdings', icon: <StarOutlined />, label: '自选持仓' },
     { key: '/backtest', icon: <HistoryOutlined />, label: '回测分析' },
     { key: '/settings', icon: <ControlOutlined />, label: '策略配置', adminOnly: true },

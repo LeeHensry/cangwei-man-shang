@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS stock_score (
   code TEXT NOT NULL,
   trade_date TEXT NOT NULL,
   strategy TEXT NOT NULL,         -- value / short / momentum
+  name TEXT,                      -- 股票名称
+  industry TEXT,                  -- 所属行业
   quality_score REAL,             -- 质量分(0-100)
   valuation_score REAL,           -- 估值分(0-100)
   technical_score REAL,           -- 技术分(0-100)
@@ -145,13 +147,24 @@ CREATE TABLE IF NOT EXISTS stock_score (
   crowding_level TEXT,            -- cold/warm/hot/crowded/extreme
   total_score REAL,               -- 综合分(0-100)
   signal TEXT,                    -- buy/momentum_buy/sell/hold/watch/trim/exit
+  current_price REAL,             -- 当前价格
   target_price REAL,              -- 目标价
   stop_loss REAL,                 -- 止损价
   position_pct REAL,              -- 建议仓位%
-  reason TEXT,                    -- 理由JSON
+  reason TEXT,                    -- 理由JSON/文本
+  quality_detail TEXT,            -- 质量因子明细JSON
+  quality_latest REAL,            -- 最新质量分快照
+  valuation_detail TEXT,          -- 估值因子明细JSON
+  technical_detail TEXT,          -- 技术因子明细JSON
+  pe REAL,                        -- PE
   PRIMARY KEY (code, trade_date, strategy)
 )`);
 // 给已有表加字段（如果不存在）
+const stockScoreCols = ['name','industry','current_price','reason','quality_detail','quality_latest','valuation_detail','technical_detail','pe'];
+for (const col of stockScoreCols) {
+  try { db.exec(`ALTER TABLE stock_score ADD COLUMN ${col} ${col === 'pe' || col === 'current_price' || col === 'quality_latest' ? 'REAL' : 'TEXT'}`); } catch(e) {}
+}
+// 旧字段兼容
 try { db.exec('ALTER TABLE stock_score ADD COLUMN crowding_score REAL'); } catch(e) {}
 try { db.exec('ALTER TABLE stock_score ADD COLUMN crowding_level TEXT'); } catch(e) {}
 

@@ -38,6 +38,35 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// 版本检测：启动时和每隔5分钟检查版本，发现新版本自动刷新（避免用户停留在旧版）
+const APP_VERSION = 'v1.1.0';
+const lastVersion = localStorage.getItem('cwms_app_version');
+if (lastVersion && lastVersion !== APP_VERSION) {
+  localStorage.setItem('cwms_app_version', APP_VERSION);
+  // 清掉旧版遗留的用户注册数据
+  if (lastVersion < 'v1.1.0') {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('cwms_users') || k === 'cwms_current_user') toRemove.push(k);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  }
+  window.location.reload();
+} else {
+  localStorage.setItem('cwms_app_version', APP_VERSION);
+}
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const d = await r.json();
+    if (d.version && d.version !== APP_VERSION && d.version !== localStorage.getItem('cwms_app_version')) {
+      localStorage.setItem('cwms_app_version', d.version);
+      window.location.reload();
+    }
+  } catch(e) {}
+}, 5 * 60 * 1000);
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <ConfigProvider locale={zhCN} theme={{

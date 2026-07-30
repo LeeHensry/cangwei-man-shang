@@ -1,5 +1,6 @@
 node_modules/
 data/*.db
+!data/seed.db
 data/*.db-*
 data/*.db-wal
 data/*.db-shm

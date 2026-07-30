@@ -5,6 +5,32 @@ const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 const path = require('path');
+const fs = require('fs');
+
+// ========== 启动前种子数据检查 ==========
+// 如果数据库不存在或为空，从seed.db复制（保证Render部署时页面不会空白）
+(function initSeed() {
+  const dbPath = path.join(__dirname, 'data', 'stock_advisor.db');
+  const seedPath = path.join(__dirname, 'data', 'seed.db');
+  try {
+    let needSeed = false;
+    if (!fs.existsSync(dbPath)) needSeed = true;
+    else {
+      // 快速检查：文件太小说明是空表(刚初始化)
+      const stat = fs.statSync(dbPath);
+      if (stat.size < 100 * 1024) needSeed = true; // < 100KB 视为没有数据
+    }
+    if (needSeed && fs.existsSync(seedPath)) {
+      fs.copyFileSync(seedPath, dbPath);
+      console.log('[init] ✅ 已从 seed.db 恢复种子数据库');
+    } else if (needSeed) {
+      console.log('[init] ⚠️ 数据库为空且无 seed.db，将在首次启动时创建空表');
+    }
+  } catch(e) {
+    console.log('[init] 种子检查失败:', e.message);
+  }
+})();
+
 const db = require('./src/data/db');
 const tq = require('./src/data/tencent');
 const { calcAllIndicators } = require('./src/factors/indicators');
@@ -521,9 +547,14 @@ app.post('/api/sync', async (req, res) => {
       // 1. 更新行情
       emitProgress('quote', `正在拉取 ${codes.length} 支股票实时行情...`, 10);
       const quotes = await tq.getQuickStockList(codes);
-      const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,pe,updated_at) VALUES (?,?,?,?,?,?,?,?)`);
-      const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st||0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
-      insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('sh')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv,pe:q.pe})));
+      const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
+      const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('sh')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
+      // 同时把PE写入valuation表
+      const today = dayjs().format('YYYYMMDD');
+      const vstmt = db.prepare(`INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`);
+      const insVal = db.transaction((rows) => { for(const r of rows) if(r.pe != null) vstmt.run(r.code, today, r.pe); });
+      insVal(quotes.filter(q=>q.code&&q.pe!=null));
       emitProgress('quote', `行情更新完成：${quotes.length} 支`, 25);
       
       // 2. 更新K线（最近7天，全量codes但每批更新）
@@ -1214,6 +1245,21 @@ cron.schedule('30 15 * * 1-5', () => {
 
 // ========== 启动 ==========
 const PORT = process.env.PORT || 3001;
+
+// 启动时：检查数据库是否有数据，打印日志
+function ensureSeedData() {
+  try {
+    const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock_info').get().c;
+    if (stockCount >= 50) {
+      console.log(`[init] 数据库就绪：${stockCount} 支股票`);
+    } else {
+      console.log(`[init] ⚠️ 数据库仅 ${stockCount} 支股票，数据较少`);
+    }
+  } catch(e) {
+    console.log('[init] 数据库检查失败:', e.message);
+  }
+}
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log('═══════════════════════════════════════');
   console.log('  🥃 仓位满上 Top Up  服务已启动');
@@ -1221,62 +1267,43 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('  时间: ' + dayjs().format('YYYY-MM-DD HH:mm:ss'));
   console.log('═══════════════════════════════════════');
   
-  // 首次启动自动初始化：如果数据库是空的，自动同步一批热门股票
-  const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock_info').get().c;
-  if (stockCount < 50) {
-    console.log('[init] 检测到数据库为空，开始首次数据同步(热门股票池)...');
+  // 1. 先确保有种子数据，避免页面空白
+  ensureSeedData();
+
+  // 2. 后台尝试更新行情（API不通则静默失败，不阻塞服务）
+  (async () => {
     try {
-      // 热门股票池：核心指数+大白马+活跃股
-      const hotCodes = [
-        'sh000001','sz399001','sz399006','sh000300','sh000905','sh000688',
-        'sh600519','sz000858','sh601318','sh600036','sz000333','sh600276',
-        'sz300750','sh601012','sh600900','sh601899','sz002594','sh601166',
-        'sh600030','sz000001','sh600887','sh601398','sh601288','sh600000',
-        'sh601988','sh600050','sz000725','sh600585','sh601668','sh601390',
-        'sz002475','sz300059','sh600438','sz002352','sh601888',
-        'sh600309','sh603288','sz000568','sz000596','sh600809',
-        'sz300124','sz002415','sh603501','sh688981','sh688012','sh688256',
-        'sz300760','sz002241','sh600048','sh601628','sh601601','sh600104',
-        'sh601857','sh600028','sh601088','sh600111','sh600547','sh601225',
-        'sz002460','sz300274','sh601127','sh600745','sz002230','sz300015',
-        'sh603259','sh600196','sz300769','sh688008','sz002049','sh603986',
-        'sh600570','sz002371','sh688036','sh688111','sh688396',
-        'sh601138','sh603160','sz300496','sh603806','sz002129','sh600436',
-      ];
-      const stocks = await tq.getQuickStockList(hotCodes);
-      console.log(`[init] 获取到 ${stocks.length} 支股票行情`);
-      
-      // 插入基本信息
+      console.log('[init] 后台尝试更新行情...');
+      const codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code).filter(c => c.startsWith('sh') || c.startsWith('sz'));
+      if (codes.length === 0) throw new Error('无股票代码');
+      const quotes = await Promise.race([
+        tq.getQuickStockList(codes.slice(0, 80)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('行情拉取超时(15s)')), 15000)),
+      ]);
       const insInfo = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,pe,updated_at) VALUES (?,?,?,?,?,?,?,?)`);
-      const trx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
-      trx(stocks.filter(s=>s.code && s.name));
-      
-      // 拉最近60天K线（只拉20支核心股票，避免首次启动太久）
-      const klineCodes = hotCodes.slice(0, 20);
-      let klineCount = 0;
-      const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-      for (const code of klineCodes) {
-        try {
-          const klines = await tq.getDailyKline(code, dayjs().subtract(60,'day').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD'));
-          if (klines.length > 0) {
-            const kins = db.transaction((rows) => { for(const k of rows) kstmt.run(k.code,k.trade_date,k.open,k.close,k.high,k.low,k.volume,k.amount,k.amplitude,k.pct_chg,k.chg,k.turnover); });
-            kins(klines);
-            klineCount += klines.length;
-          }
-          await new Promise(r=>setTimeout(r,150));
-        } catch(e) { console.log('[init] kline error for',code,e.message); }
-      }
-      console.log(`[init] 插入 ${klineCount} 条K线`);
-      
-      // 计算评分（不等待，后台异步跑，避免阻塞服务启动）
-      scoreAllStocks(false).then(() => {
-        console.log('[init] 首次数据评分完成！');
-      }).catch(e => {
-        console.error('[init] 评分失败(非致命):', e.message);
-      });
-      console.log('[init] 首次数据同步完成（评分后台进行中）');
+      const tx = db.transaction((rows) => { for(const r of rows) insInfo.run(r.code,r.name,r.market||(r.code.startsWith('sh')?'SH':'SZ'),r.is_st||0,r.total_mv,r.circ_mv,r.pe,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
+      tx(quotes.filter(s=>s.code && s.name).map(q => ({code:q.code,name:q.name,market:q.market,is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv,pe:q.pe})));
+      console.log(`[init] 行情更新完成: ${quotes.length} 支`);
     } catch(e) {
-      console.error('[init] 首次同步失败(非致命):', e.message);
+      console.log('[init] 行情更新跳过(可能海外节点受限):', e.message);
     }
-  }
+    
+    // 3. 评分（如果已有评分则跳过，否则尝试计算）
+    try {
+      const latest = db.prepare('SELECT MAX(trade_date) as d FROM stock_score').get().d;
+      const today = dayjs().format('YYYYMMDD');
+      if (!latest || latest < dayjs().subtract(3,'day').format('YYYYMMDD')) {
+        console.log('[init] 开始评分...');
+        await scoreAllStocks(false);
+        console.log('[init] 评分完成');
+      } else {
+        console.log(`[init] 评分数据已是最新(${latest})，跳过`);
+      }
+      await calcAllCrowding();
+      console.log('[init] 拥挤度计算完成');
+    } catch(e) {
+      console.log('[init] 评分/拥挤度跳过:', e.message);
+    }
+  })();
 });
+
