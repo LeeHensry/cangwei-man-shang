@@ -23,6 +23,46 @@ const YAHOO = axios.create({
   },
 });
 
+// Yahoo Finance v8 API 需要 crumb 认证（防止滥用）
+// 先访问consent页面获取cookie，再拿crumb
+let _crumb = null;
+let _crumbTs = 0;
+async function getCrumb() {
+  if (_crumb && Date.now() - _crumbTs < 30 * 60 * 1000) return _crumb; // 缓存30min
+  try {
+    // 访问首页拿cookie
+    await YAHOO.get('https://fc.yahoo.com', { timeout: 5000, validateStatus: () => true });
+    // 拿crumb
+    const r = await YAHOO.get('/v1/test/getcrumb', { timeout: 5000 });
+    _crumb = r.data;
+    _crumbTs = Date.now();
+    return _crumb;
+  } catch(e) {
+    // crumb获取失败，返回null（无crumb也可能通，看地区）
+    return null;
+  }
+}
+
+async function yahooGet(url, params) {
+  const crumb = await getCrumb();
+  const opts = { params: { ...params } };
+  if (crumb) opts.params.crumb = crumb;
+  try {
+    return await YAHOO.get(url, opts);
+  } catch(e) {
+    // 如果429，清crumb重试一次
+    if (e.response?.status === 429) {
+      _crumb = null;
+      _crumbTs = 0;
+      const crumb2 = await getCrumb();
+      if (crumb2) {
+        return await YAHOO.get(url, { params: { ...params, crumb: crumb2 } });
+      }
+    }
+    throw e;
+  }
+}
+
 // 代码转换 sh600519 → 600519.SS
 function toYahooCode(code) {
   if (!code) return code;
@@ -74,7 +114,7 @@ async function getQuickStockList(stockCodes) {
   async function fetchOne(code) {
     const ycode = toYahooCode(code);
     try {
-      const res = await YAHOO.get('/v8/finance/chart/' + ycode, {
+      const res = await yahooGet('/v8/finance/chart/' + ycode, {
         params: { range: '5d', interval: '1d', includePrePost: 'false' },
       });
       const chart = res.data?.chart?.result?.[0];
@@ -166,7 +206,7 @@ async function getDailyKline(code, startDate, endDate) {
     else if (days <= 250) range = '1y';
     else range = '2y';
 
-    const res = await YAHOO.get('/v8/finance/chart/' + ycode, {
+    const res = await yahooGet('/v8/finance/chart/' + ycode, {
       params: { range, interval: '1d', includePrePost: 'false' },
     });
     const chart = res.data?.chart?.result?.[0];
@@ -237,7 +277,7 @@ async function getSectorList() {
 async function probe() {
   try {
     const start = Date.now();
-    const res = await YAHOO.get('/v8/finance/chart/600519.SS', {
+    const res = await yahooGet('/v8/finance/chart/600519.SS', {
       params: { range: '2d', interval: '1d' },
     });
     const ok = res.data?.chart?.result?.[0]?.meta?.regularMarketPrice > 0;
