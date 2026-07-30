@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.1.1 (2026-07-30)
+
+### 🐛 Bug 修复
+- **修复首次部署页面空白**：新增 seed.db 种子数据库（54支核心股票+评分+K线+拥挤度数据），Render 启动时自动从 seed 恢复，页面不会空白
+- **修复同步接口 schema 不匹配**：stock_info 去掉不存在的 pe 列（pe 在 valuation 表）；stock_score 表补齐 name/industry/current_price/quality_detail 等缺失列
+- **修复评分时财务数据不足导致返回null**：无财务数据时返回中性分50，确保评分能产生结果
+- **修复菜单图标/emoji 不统一**：去掉 label 里的 emoji 前缀，全部使用 AntD 图标（8个模块icon互不重复）
+
+### 🔧 优化
+- 前端加版本检测：启动时检查 /api/version，发现新版本自动页面刷新，解决浏览器缓存旧版问题
+- index.html 加 no-cache 响应头，assets URL 附加 ?v= 启动时间戳强制更新
+- 服务启动后台更新行情时，API 超时15秒即放弃，避免海外节点阻塞
+
+---
+
 ## v1.1.0 (2026-07-30)
 
 ### 🆕 新增
