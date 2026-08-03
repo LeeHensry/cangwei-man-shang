@@ -14,11 +14,11 @@ const { Title, Text } = Typography;
 
 // 拥挤度等级meta
 const levelMeta = {
-  extreme: { label: '🚨 极端危险', color: '#d92d20', bg: 'rgba(239,68,68,0.08)', advice: '立即减仓/清仓，踩踏风险极高' },
-  crowded: { label: '⚠️ 拥挤预警', color: '#f04438', bg: 'rgba(239,68,68,0.08)', advice: '减仓50%，锁定利润' },
-  hot: { label: '🔥 火热持有', color: '#f79009', bg: 'rgba(249,115,22,0.08)', advice: '持有不追加，密切关注' },
-  warm: { label: '🟣 动量搭车', color: '#9e77ed', bg: 'rgba(168,85,247,0.08)', advice: '小仓位顺势介入，严格止损' },
-  cold: { label: '🧊 冷清逆向', color: '#12b76a', bg: 'rgba(34,197,94,0.08)', advice: '关注基本面好的标的，逆向布局' },
+  extreme: { label: '🚨 极端危险', color: '#d92d20', bg: '#fef3f2', advice: '立即减仓/清仓，踩踏风险极高' },
+  crowded: { label: '⚠️ 拥挤预警', color: '#f04438', bg: '#fff1f0', advice: '减仓50%，锁定利润' },
+  hot: { label: '🔥 火热持有', color: '#f79009', bg: '#fff7ed', advice: '持有不追加，密切关注' },
+  warm: { label: '🟣 动量搭车', color: '#9e77ed', bg: '#f9f5ff', advice: '小仓位顺势介入，严格止损' },
+  cold: { label: '🧊 冷清逆向', color: '#12b76a', bg: '#ecfdf3', advice: '关注基本面好的标的，逆向布局' },
 };
 
 const actionMeta = {
@@ -29,7 +29,7 @@ const actionMeta = {
   accumulate: { label: '布局', color: '#12b76a', icon: '🟢' },
 };
 
-const pctColor = (v) => v === null || v === undefined ? '#94A3B8' : v >= 0 ? '#f04438' : '#12b76a';
+const pctColor = (v) => v === null || v === undefined ? '#98a2b3' : v >= 0 ? '#f04438' : '#12b76a';
 const formatPct = (v) => v === null || v === undefined ? '-' : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
 
 export default function CrowdingRadar() {
@@ -67,7 +67,7 @@ export default function CrowdingRadar() {
       type: 'category',
       data: sortedSectors.map(s => s.sector),
       axisLine: { show: false }, axisTick: { show: false },
-      axisLabel: { fontSize: 11, color: '#94A3B8' }
+      axisLabel: { fontSize: 11, color: '#475467' }
     },
     tooltip: {
       trigger: 'axis',
@@ -95,7 +95,7 @@ export default function CrowdingRadar() {
       label: {
         show: true, position: 'right',
         formatter: (p) => p.value,
-        fontSize: 10, color: '#94A3B8', fontWeight: 600,
+        fontSize: 10, color: '#667085', fontWeight: 600,
       }
     }],
   };
@@ -120,8 +120,8 @@ export default function CrowdingRadar() {
   const stockCols = [
     { title: '股票', dataIndex: 'name', render: (v, r) => (
       <div>
-        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>{v}</a>
-        <div style={{ fontSize: 10, color: '#94A3B8' }}>{r.code}</div>
+        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828' }}>{v}</a>
+        <div style={{ fontSize: 10, color: '#98a2b3' }}>{r.code}</div>
       </div>
     )},
     { title: '拥挤度', dataIndex: 'combined_crowding_score', width: 100, align: 'center',
@@ -157,8 +157,8 @@ export default function CrowdingRadar() {
   const momentumCols = [
     { title: '股票', dataIndex: 'name', render: (v, r) => (
       <div>
-        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>{v}</a>
-        <div style={{ fontSize: 10, color: '#94A3B8' }}>{r.code}</div>
+        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828' }}>{v}</a>
+        <div style={{ fontSize: 10, color: '#98a2b3' }}>{r.code}</div>
       </div>
     )},
     { title: '拥挤度', dataIndex: 'combined_crowding_score', width: 80, align: 'center',
@@ -181,8 +181,8 @@ export default function CrowdingRadar() {
   const coldCols = [
     { title: '股票', dataIndex: 'name', render: (v, r) => (
       <div>
-        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>{v}</a>
-        <div style={{ fontSize: 10, color: '#94A3B8' }}>{r.code}</div>
+        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828' }}>{v}</a>
+        <div style={{ fontSize: 10, color: '#98a2b3' }}>{r.code}</div>
       </div>
     )},
     { title: '拥挤度', dataIndex: 'combined_crowding_score', width: 80, align: 'center',
@@ -229,7 +229,7 @@ export default function CrowdingRadar() {
             <Tag style={{marginTop:8,background:ml.bg,color:ml.color,border:'none',fontWeight:600}}>
               {ml.label}
             </Tag>
-            <div style={{marginTop:6,fontSize:11,color:'#94A3B8'}}>{ml.advice}</div>
+            <div style={{marginTop:6,fontSize:11,color:'#667085'}}>{ml.advice}</div>
           </Card>
         </Col>
         <Col span={5}>
@@ -239,7 +239,7 @@ export default function CrowdingRadar() {
               <Text strong style={{fontSize:13,color:'#d92d20'}}>🚨 清仓预警</Text>
             </div>
             <div style={{fontSize:32,fontWeight:800,fontFamily:'Inter',color:'#d92d20'}}>
-              {exit_signals.length}<span style={{fontSize:14,color:'#94A3B8',fontWeight:400,marginLeft:4}}>只</span>
+              {exit_signals.length}<span style={{fontSize:14,color:'#98a2b3',fontWeight:400,marginLeft:4}}>只</span>
             </div>
             <Text type="secondary" style={{fontSize:11}}>极端拥挤，踩踏风险极高</Text>
           </Card>
@@ -251,7 +251,7 @@ export default function CrowdingRadar() {
               <Text strong style={{fontSize:13,color:'#9e77ed'}}>🟣 动量搭车</Text>
             </div>
             <div style={{fontSize:32,fontWeight:800,fontFamily:'Inter',color:'#9e77ed'}}>
-              {momentum_candidates.length}<span style={{fontSize:14,color:'#94A3B8',fontWeight:400,marginLeft:4}}>只</span>
+              {momentum_candidates.length}<span style={{fontSize:14,color:'#98a2b3',fontWeight:400,marginLeft:4}}>只</span>
             </div>
             <Text type="secondary" style={{fontSize:11}}>温和加速，小仓位顺势介入</Text>
           </Card>
@@ -259,10 +259,10 @@ export default function CrowdingRadar() {
         <Col span={8}>
           <Card bodyStyle={{padding:'16px 20px',height:'100%'}}>
             <div style={{marginBottom:8}}>
-              <InfoCircleOutlined style={{color:'#94A3B8',marginRight:4}}/>
-              <Text strong style={{fontSize:12,color:'#334155'}}>拥挤度策略逻辑</Text>
+              <InfoCircleOutlined style={{color:'#667085',marginRight:4}}/>
+              <Text strong style={{fontSize:12,color:'#344054'}}>拥挤度策略逻辑</Text>
             </div>
-            <div style={{fontSize:11,lineHeight:1.8,color:'#94A3B8'}}>
+            <div style={{fontSize:11,lineHeight:1.8,color:'#475467'}}>
               <div>🟢 <b>0-30 冷清</b>：无人问津，逆向布局优质股</div>
               <div>🟣 <b>30-55 搭车</b>：量化刚涌入，顺势小仓位介入</div>
               <div>⏸ <b>55-75 持有</b>：趋势延续，不追加</div>
@@ -328,10 +328,10 @@ export default function CrowdingRadar() {
             }
             bodyStyle={{padding: 0}}
             extra={<Tooltip title="量化资金刚开始涌入，动量温和加速阶段。单只仓位5%，严格-7%止损，拥挤度到80止盈">
-              <InfoCircleOutlined style={{color:'#94A3B8'}}/>
+              <InfoCircleOutlined style={{color:'#98a2b3'}}/>
             </Tooltip>}
           >
-            <div style={{padding:'8px 12px',background:'rgba(168,85,247,0.06)',fontSize:11,color:'#6941c6'}}>
+            <div style={{padding:'8px 12px',background:'#f9f5ff',fontSize:11,color:'#6941c6'}}>
               💡 搭车要点：不追高，等回踩5日线介入；板块拥挤度超过80必须止盈；止损-7%不犹豫
             </div>
             <Table
@@ -355,10 +355,10 @@ export default function CrowdingRadar() {
             }
             bodyStyle={{padding: 0}}
             extra={<Tooltip title="无人问津的优质股，基本面好+估值低+拥挤度低，适合长线布局">
-              <InfoCircleOutlined style={{color:'#94A3B8'}}/>
+              <InfoCircleOutlined style={{color:'#98a2b3'}}/>
             </Tooltip>}
           >
-            <div style={{padding:'8px 12px',background:'rgba(34,197,94,0.06)',fontSize:11,color:'#027a48'}}>
+            <div style={{padding:'8px 12px',background:'#ecfdf3',fontSize:11,color:'#027a48'}}>
               💡 逆向要点：基本面(质量分≥60) + 估值合理 + 无人关注，耐心等待价值回归
             </div>
             <Table

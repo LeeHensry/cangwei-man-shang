@@ -52,17 +52,17 @@ async function restoreFromBackup() {
 
 
 const signalMeta = {
-  buy: { label: '买入', color: '#f04438', bg: 'rgba(239,68,68,0.08)' },
-  watch: { label: '关注', color: '#b54708', bg: 'rgba(249,115,22,0.08)' },
-  hold: { label: '持有', color: '#175cd3', bg: 'rgba(59,130,246,0.08)' },
-  sell: { label: '减仓', color: '#027a48', bg: 'rgba(34,197,94,0.08)' },
+  buy: { label: '买入', color: '#f04438', bg: '#fef3f2' },
+  watch: { label: '关注', color: '#b54708', bg: '#fffaeb' },
+  hold: { label: '持有', color: '#175cd3', bg: '#f0f9ff' },
+  sell: { label: '减仓', color: '#027a48', bg: '#ecfdf3' },
 };
 
 function PnLText({ value, suffix = '%', colored = true }) {
   if (value === null || value === undefined || isNaN(value)) return <Text type="secondary">--</Text>;
   const color = value >= 0 ? '#f04438' : '#12b76a';
   const sign = value >= 0 ? '+' : '';
-  return <Text style={{ color: colored ? color : '#334155', fontWeight: 600, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{sign}{value.toFixed(2)}{suffix}</Text>;
+  return <Text style={{ color: colored ? color : '#344054', fontWeight: 600, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{sign}{value.toFixed(2)}{suffix}</Text>;
 }
 
 export default function Holdings() {
@@ -131,7 +131,7 @@ export default function Holdings() {
     { title: '股票', render: (_, r) => (
       <div>
         <a onClick={() => navigate('/stock/'+r.code)} style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</a>
-        <div style={{ fontSize: 11, color: '#94A3B8', fontFamily: 'Inter' }}>{r.code}</div>
+        <div style={{ fontSize: 11, color: '#98a2b3', fontFamily: 'Inter' }}>{r.code}</div>
       </div>
     )},
     { title: '成本价', dataIndex: 'buy_price', align: 'right', width: 80,
@@ -232,7 +232,7 @@ export default function Holdings() {
         <Col span={6}>
           <Card bodyStyle={{ padding: '16px 20px' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>当前仓位</Text>
-            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'Inter', color: posPct > suggestedPos + 20 ? '#f04438' : '#0F172A', marginTop: 4 }}>{posPct}%</div>
+            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'Inter', color: posPct > suggestedPos + 20 ? '#f04438' : '#101828', marginTop: 4 }}>{posPct}%</div>
             <Progress percent={posPct} showInfo={false}
               strokeColor={posPct > suggestedPos + 20 ? '#f04438' : posPct < suggestedPos - 20 ? '#12b76a' : '#2e90fa'}
               style={{ marginTop: 8 }} />

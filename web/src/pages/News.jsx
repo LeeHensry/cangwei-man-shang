@@ -53,7 +53,7 @@ export default function News() {
       </div>
 
       {/* 资讯提醒条 */}
-      <Card bodyStyle={{ padding: '12px 20px' }} style={{ marginBottom: 16, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+      <Card bodyStyle={{ padding: '12px 20px' }} style={{ marginBottom: 16, background: '#fffbeb', border: '1px solid #fef0c7' }}>
         <Row align="middle" gutter={12}>
           <Col><BulbOutlined style={{ fontSize: 20, color: '#f79009' }} /></Col>
           <Col flex="1">
@@ -83,11 +83,11 @@ export default function News() {
                <List
                  dataSource={news[activeTab]||[]}
                  renderItem={item => (
-                   <List.Item style={{ padding: '10px 0', borderBottom: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                   <List.Item style={{ padding: '10px 0', borderBottom: '1px solid #f2f4f7', cursor: 'pointer' }}>
                      <List.Item.Meta
                        avatar={
-                         <div style={{width:36,height:36,borderRadius:8,background:'#F8FAFC',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                           <ReadOutlined style={{color:'#94A3B8',fontSize:16}}/>
+                         <div style={{width:36,height:36,borderRadius:8,background:'#f2f4f7',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                           <ReadOutlined style={{color:'#98a2b3',fontSize:16}}/>
                          </div>
                        }
                        title={
@@ -143,7 +143,7 @@ export default function News() {
                 { label: '北向资金', value: '-108亿', color: '#12b76a' },
                 { label: '两融余额', value: '1.68万亿', color: '#2e90fa' },
               ].map(s => (
-                <div key={s.label} style={{textAlign:'center',padding:8,background:'#FFFFFF',borderRadius:8,border:'1px solid #F1F5F9'}}>
+                <div key={s.label} style={{textAlign:'center',padding:8,background:'#f9fafb',borderRadius:8}}>
                   <div style={{fontSize:18,fontWeight:700,color:s.color,fontFamily:'Inter'}}>{s.value}</div>
                   <Text type="secondary" style={{fontSize:11}}>{s.label}</Text>
                 </div>

@@ -236,7 +236,7 @@ export default function Settings() {
             title={<Space><DatabaseOutlined/>数据管理</Space>}
             extra={<Button type="primary" icon={syncing ? <LoadingOutlined /> : <ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing}>立即同步</Button>}
           >
-            <Descriptions column={1} size="small" labelStyle={{color:'#94A3B8'}} contentStyle={{fontWeight:600}}>
+            <Descriptions column={1} size="small" labelStyle={{color:'#667085'}} contentStyle={{fontWeight:600}}>
               {dbStats ? (
                 <>
                   <Descriptions.Item label="股票数量">{dbStats.stocks} 只</Descriptions.Item>
@@ -313,7 +313,7 @@ export default function Settings() {
           <Card title="关于仓位满上">
             <div style={{ lineHeight: 1.8, fontSize: 13 }}>
               <p><b>仓位满上 TopUp</b> - A股智能决策助手</p>
-              <p style={{color:'#94A3B8'}}>以价值投资为核心策略，结合多因子评分模型、资金面分析、技术面择时、量化拥挤度，为个人投资者提供客观的交易参考。</p>
+              <p style={{color:'#667085'}}>以价值投资为核心策略，结合多因子评分模型、资金面分析、技术面择时、量化拥挤度，为个人投资者提供客观的交易参考。</p>
               <Divider style={{margin:'8px 0'}}/>
               <Space direction="vertical" size={4} style={{width:'100%'}}>
                 <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">版本</Text><Text>v1.1.1</Text></div>
@@ -358,7 +358,7 @@ export default function Settings() {
           <Progress percent={syncProgress} strokeColor={currentStageMeta.color} showInfo={false}
             status={syncError ? 'exception' : (syncProgress >= 100 ? 'success' : 'active')} />
         </div>
-        <div style={{ maxHeight: 280, overflowY:'auto', background:'#F8FAFC', borderRadius:8, padding:12, fontSize:12, fontFamily:'ui-monospace,SFMono-Regular,Menlo,monospace', color:'#334155' }}>
+        <div style={{ maxHeight: 280, overflowY:'auto', background:'#fafafa', borderRadius:8, padding:12, fontSize:12, fontFamily:'ui-monospace,SFMono-Regular,Menlo,monospace' }}>
           <List
             size="small"
             dataSource={syncLogs}

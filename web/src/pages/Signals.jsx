@@ -10,11 +10,11 @@ import { getStocks, getIndustries } from '../api';
 const { Text } = Typography;
 
 const signalMeta = {
-  buy: { label: '买入', color: '#f04438', bg: 'rgba(239,68,68,0.08)', icon: '🟢' },
-  momentum_buy: { label: '动量', color: '#9e77ed', bg: 'rgba(168,85,247,0.08)', icon: '🟣' },
-  watch: { label: '关注', color: '#b54708', bg: 'rgba(249,115,22,0.08)', icon: '🟡' },
-  hold: { label: '持有', color: '#175cd3', bg: 'rgba(59,130,246,0.08)', icon: '⏸' },
-  sell: { label: '减仓', color: '#027a48', bg: 'rgba(34,197,94,0.08)', icon: '↓' },
+  buy: { label: '买入', color: '#f04438', bg: '#fef3f2', icon: '🟢' },
+  momentum_buy: { label: '动量', color: '#9e77ed', bg: '#f9f5ff', icon: '🟣' },
+  watch: { label: '关注', color: '#b54708', bg: '#fffaeb', icon: '🟡' },
+  hold: { label: '持有', color: '#175cd3', bg: '#f0f9ff', icon: '⏸' },
+  sell: { label: '减仓', color: '#027a48', bg: '#ecfdf3', icon: '↓' },
 };
 
 export default function Signals() {
@@ -59,7 +59,7 @@ export default function Signals() {
             {r.is_oldman && <Tooltip title="传统行业/低成长"><span style={{fontSize:12}}>👴</span></Tooltip>}
           </div>
           <div>
-            <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#0F172A' }}>{v}</a>
+            <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828' }}>{v}</a>
             <div>
               <Text type="secondary" style={{ fontSize: 11, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{r.code}</Text>
               {r.current_price && (
@@ -76,13 +76,13 @@ export default function Signals() {
     { title: 'PE', dataIndex: 'pe', width: 70, align: 'right',
       render: v => v ? <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{v.toFixed(1)}x</Text> : '-' },
     { title: '市值(亿)', dataIndex: 'total_mv', width: 90, align: 'right', sorter: true,
-      render: v => v ? <Text style={{ fontFamily: 'Inter', fontSize: 12, color: '#94A3B8', fontVariantNumeric: 'tabular-nums' }}>{v >= 10000 ? (v/10000).toFixed(1)+'万' : v.toLocaleString()}</Text> : '-' },
+      render: v => v ? <Text style={{ fontFamily: 'Inter', fontSize: 12, color: '#475467', fontVariantNumeric: 'tabular-nums' }}>{v >= 10000 ? (v/10000).toFixed(1)+'万' : v.toLocaleString()}</Text> : '-' },
     { title: '综合分', dataIndex: 'total_score', width: 140, sorter: true,
       render: v => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Progress
             percent={v} size="small" showInfo={false}
-            strokeColor={v >= 70 ? '#f04438' : v >= 60 ? '#f79009' : v >= 50 ? '#2e90fa' : '#F1F5F9'}
+            strokeColor={v >= 70 ? '#f04438' : v >= 60 ? '#f79009' : v >= 50 ? '#2e90fa' : '#d0d5dd'}
             style={{ flex: 1 }}
           />
           {scoreBadge(v)}
@@ -90,11 +90,11 @@ export default function Signals() {
       )
     },
     { title: <Tooltip title="盈利能力+成长+健康+稳定">质量</Tooltip>, dataIndex: 'quality_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#12b76a' : v >= 45 ? '#f79009' : '#94A3B8' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#12b76a' : v >= 45 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
     { title: <Tooltip title="PE估值+价格位置">估值</Tooltip>, dataIndex: 'valuation_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#f04438' : v >= 40 ? '#f79009' : '#94A3B8' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#f04438' : v >= 40 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
     { title: <Tooltip title="均线/MACD/RSI/量能">技术</Tooltip>, dataIndex: 'technical_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#2e90fa' : v >= 45 ? '#f79009' : '#94A3B8' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#2e90fa' : v >= 45 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
     { title: '行业', dataIndex: 'industry', width: 120, ellipsis: true,
       render: v => <Text type="secondary" style={{ fontSize: 12 }}>{v || '-'}</Text> },
     { title: '信号', dataIndex: 'signal', width: 90, align: 'center', fixed: 'right',
@@ -158,7 +158,7 @@ export default function Signals() {
               ]}
             />
             <Input
-              placeholder="搜索名称或代码" prefix={<SearchOutlined style={{color:'#94A3B8'}}/>}
+              placeholder="搜索名称或代码" prefix={<SearchOutlined style={{color:'#98a2b3'}}/>}
               style={{ width: 160 }} allowClear size="middle"
               value={search} onChange={e => setSearch(e.target.value)}
             />

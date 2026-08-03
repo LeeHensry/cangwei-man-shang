@@ -48,10 +48,10 @@ export default function Backtest() {
       }
     },
     xAxis: { type: 'category', data: result.nav_curve.map(n=>n.date),
-      axisLabel: { fontSize: 10, color: '#94A3B8' }, axisLine: { lineStyle: { color: '#E2E8F0' }} },
+      axisLabel: { fontSize: 10, color: '#98a2b3' }, axisLine: { lineStyle: { color: '#e4e7ec' }} },
     yAxis: [
-      { type: 'value', axisLabel: { formatter: v => ((v-1)*100).toFixed(0)+'%', fontSize: 10, color: '#94A3B8' },
-        splitLine: { lineStyle: { color: '#E2E8F0' }}},
+      { type: 'value', axisLabel: { formatter: v => ((v-1)*100).toFixed(0)+'%', fontSize: 10, color: '#98a2b3' },
+        splitLine: { lineStyle: { color: '#f2f4f7' }}},
       { type: 'value', axisLabel: { formatter: '{value}%', fontSize: 10, color: '#f04438' }, splitLine: { show: false }},
     ],
     series: [
