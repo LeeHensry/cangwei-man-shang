@@ -536,12 +536,14 @@ app.post('/api/sync', async (req, res) => {
     return res.json({ status: 'running', message: '同步正在进行中' });
   }
   syncRunning = true;
-  res.json({ status: 'started', message: '数据同步已启动' });
+  const syncMode = req.body?.mode || 'incremental'; // 'incremental' | 'full'
+  res.json({ status: 'started', message: syncMode === 'full' ? '全量数据同步已启动' : '数据同步已启动', mode: syncMode });
   
-  // 异步执行
+  // 异步执行（不阻塞HTTP响应，SSE推送进度）
   (async () => {
     try {
-      emitProgress('init', '开始同步数据...', 0);
+      const currentSettings = userSettings; // 捕获当前设置快照
+      emitProgress('init', syncMode === 'full' ? '开始全量数据同步（拉取3年历史K线）...' : '开始增量同步数据...', 0);
       // 优先使用股票池，其次stock_info，最后兜底热门股票
       let codes = stockPool.getPoolCodes();
       if (codes.length === 0) {
@@ -549,7 +551,7 @@ app.post('/api/sync', async (req, res) => {
       }
       
       if (codes.length === 0) {
-        // 首次同步：拉取热门股票池作为种子（股票池更新会扩大到200只）
+        // 首次同步：拉取热门股票池作为种子
         emitProgress('list', '数据库为空，加载热门股票池...', 5);
         const hotCodes = [
           '600519','000858','601318','600036','000333','600276',
@@ -566,25 +568,31 @@ app.post('/api/sync', async (req, res) => {
       }
       
       // 1. 更新行情
-      emitProgress('quote', `正在拉取 ${codes.length} 支股票实时行情...`, 10);
-      const quotes = await tq.getQuickStockList(codes);
+      emitProgress('quote', `正在拉取 ${codes.length} 支股票实时行情...`, 5);
+      let quotes = [];
+      try {
+        quotes = await tq.getQuickStockList(codes);
+      } catch(e) {
+        emitProgress('quote', `行情拉取失败: ${e.message}，使用缓存数据`, 8);
+      }
       const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
       const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
       insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('6')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
-      // 同时把PE写入valuation表
       const today = dayjs().format('YYYYMMDD');
       const vstmt = db.prepare(`INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`);
       const insVal = db.transaction((rows) => { for(const r of rows) if(r.pe != null) vstmt.run(r.code, today, r.pe); });
       insVal(quotes.filter(q=>q.code&&q.pe!=null));
-      emitProgress('quote', `行情更新完成：${quotes.length} 支`, 25);
+      emitProgress('quote', `行情更新完成：${quotes.length} 支`, 15);
       
-      // 2. 更新K线（最近7天，全量codes但每批更新）
-      emitProgress('kline', `更新K线数据...`, 30);
-      const klineStart = dayjs().subtract(60,'day').format('YYYY-MM-DD');
+      // 2. 更新K线（增量60天 / 全量3年）
+      const klineHistoryDays = syncMode === 'full' ? 1100 : 60;
+      const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
       const klineEnd = dayjs().format('YYYY-MM-DD');
+      emitProgress('kline', `更新K线数据（${syncMode === 'full' ? '全量3年' : '近60天增量'}）...`, 18);
       const kstmt = db.prepare(`INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
       let klineCount = 0;
-      const klineCodes = codes; // 拉取全量股票池K线（最多200只）
+      let klineErrors = 0;
+      const klineCodes = codes;
       for (let i = 0; i < klineCodes.length; i++) {
         const code = klineCodes[i];
         try {
@@ -594,17 +602,27 @@ app.post('/api/sync', async (req, res) => {
             kins(klines);
             klineCount += klines.length;
           }
-        } catch(e) {}
-        if (i % 10 === 0) {
-          const pct = 30 + Math.floor((i / klineCodes.length) * 25);
-          emitProgress('kline', `K线: ${i+1}/${klineCodes.length} (${klineCount}条)`, pct);
+        } catch(e) {
+          klineErrors++;
+          // 上报错误但不中断
+          if (klineErrors <= 3) {
+            emitProgress('kline', `K线警告: ${code} 拉取失败(${e.message?.slice(0,30)})`, -1);
+          }
         }
-        await tq.sleep(80);
+        // 每5只汇报一次进度，更细粒度
+        if (i % 5 === 0 || i === klineCodes.length - 1) {
+          const pct = syncMode === 'full'
+            ? 18 + Math.floor((i / klineCodes.length) * 45)
+            : 18 + Math.floor((i / klineCodes.length) * 35);
+          emitProgress('kline', `K线: ${i+1}/${klineCodes.length} (${klineCount}条${klineErrors > 0 ? `, ${klineErrors}个失败` : ''})`, pct);
+        }
+        await tq.sleep(syncMode === 'full' ? 120 : 80);
       }
-      emitProgress('kline', `K线更新完成：${klineCount} 条`, 55);
+      emitProgress('kline', `K线更新完成：${klineCount} 条${klineErrors > 0 ? `（${klineErrors}个失败）` : ''}`, syncMode === 'full' ? 63 : 53);
       
       // 3. 计算技术指标
-      emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', 60);
+      const indStartPct = syncMode === 'full' ? 65 : 55;
+      emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', indStartPct);
       const allCodes = db.prepare('SELECT DISTINCT code FROM daily_kline').all().map(r => r.code);
       let indCount = 0;
       for (let i = 0; i < allCodes.length; i++) {
@@ -617,30 +635,42 @@ app.post('/api/sync', async (req, res) => {
         iins(inds);
         indCount++;
         if (i % 20 === 0) {
-          const pct = 60 + Math.floor((i / allCodes.length) * 15);
+          const pct = indStartPct + Math.floor((i / allCodes.length) * 12);
           emitProgress('indicator', `指标: ${i+1}/${allCodes.length}`, pct);
         }
       }
-      emitProgress('indicator', `技术指标计算完成：${indCount} 支`, 75);
+      emitProgress('indicator', `技术指标计算完成：${indCount} 支`, indStartPct + 12);
       
-      // 4. 计算评分
-      emitProgress('score', '计算多因子评分...', 80);
-      await scoreAllStocks(false);
-      emitProgress('score', '评分完成', 90);
+      // 4. 计算评分（传入用户设置）
+      const scoreStartPct = indStartPct + 14;
+      emitProgress('score', '计算多因子评分（使用当前策略配置）...', scoreStartPct);
+      await scoreAllStocks(false, true, currentSettings);
+      emitProgress('score', '评分完成', scoreStartPct + 10);
       
-      // 5. 计算拥挤度
-      emitProgress('crowding', '计算拥挤度...', 93);
+      // 5. 计算短线信号
+      const shortStartPct = scoreStartPct + 10;
+      emitProgress('short', '计算短线信号...', shortStartPct);
+      try { calcAllShortSignals(); } catch(e) { console.log('short signals error:', e.message); }
+      emitProgress('short', '短线信号计算完成', shortStartPct + 3);
+      
+      // 6. 计算拥挤度
+      const crowdStartPct = shortStartPct + 3;
+      emitProgress('crowding', '计算拥挤度...', crowdStartPct);
       try { calcAllCrowding(); } catch(e) { console.log('crowding error:', e.message); }
-      emitProgress('crowding', '拥挤度计算完成', 97);
+      emitProgress('crowding', '拥挤度计算完成', crowdStartPct + 3);
 
       // 同步完更新股票池
       try {
-        emitProgress('pool', '更新关注池...', 99);
+        const poolStartPct = crowdStartPct + 3;
+        emitProgress('pool', '更新关注池...', poolStartPct);
         await stockPool.updateStockPool(200);
       } catch(e) { console.log('pool update error:', e.message); }
 
-      emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线 / ${indCount}支评分 / 200关注池`, 100);
-      console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 同步完成');
+      // Checkpoint WAL，确保数据持久化
+      try { db.pragma('wal_checkpoint(PASSIVE)'); } catch(e) {}
+
+      emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线 / ${indCount}支评分 / 200关注池${klineErrors > 0 ? `（${klineErrors}个股票K线拉取失败）` : ''}`, 100);
+      console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 同步完成 (' + syncMode + ')');
     } catch(e) {
       emitProgress('error', '同步失败: ' + e.message, -1);
       console.error('同步失败:', e);
@@ -735,8 +765,13 @@ const { runBacktest } = require('./src/strategies/backtest');
 
 app.post('/api/backtest/run', (req, res) => {
   try {
-    const result = runBacktest(req.body || {});
-    res.json(result);
+    // setImmediate 避免阻塞事件循环
+    setImmediate(() => {
+      try {
+        const result = runBacktest(req.body || {});
+        res.json(result);
+      } catch (e) { res.status(500).json({ error: e.message }); }
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -752,7 +787,7 @@ app.get('/api/db/stats', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 设置接口（内存存储，重启后恢复默认）
+// 设置接口（数据库持久化）
 const defaultSettings = {
   valWeight: 35, qualWeight: 35, techWeight: 30,
   newEconBonus: 5, oldPenalty: 8,
@@ -760,10 +795,48 @@ const defaultSettings = {
   stopLoss: 15, takeProfit: 40,
   topCount: 10, autoSync: true, syncTime: '15:30',
 };
-let userSettings = { ...defaultSettings };
+
+// 从数据库加载设置
+function loadSettings() {
+  try {
+    const rows = db.prepare('SELECT key, value FROM app_settings').all();
+    const saved = {};
+    for (const r of rows) {
+      try { saved[r.key] = JSON.parse(r.value); } catch(e) { saved[r.key] = r.value; }
+    }
+    return { ...defaultSettings, ...saved };
+  } catch(e) {
+    return { ...defaultSettings };
+  }
+}
+
+function saveSettingsToDB(settings) {
+  const stmt = db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)');
+  const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+  const saveOne = db.transaction((entries) => {
+    for (const [k, v] of entries) stmt.run(k, JSON.stringify(v), now);
+  });
+  saveOne(Object.entries(settings));
+}
+
+let userSettings = loadSettings();
+
 app.get('/api/settings', (req, res) => res.json(userSettings));
 app.post('/api/settings', (req, res) => {
   userSettings = { ...defaultSettings, ...(req.body || {}) };
+  saveSettingsToDB(userSettings);
+  // 设置变更后立即异步重新评分（不阻塞响应）
+  setTimeout(async () => {
+    try {
+      console.log('[settings] 设置已变更，重新计算评分...');
+      await scoreAllStocks(false, true, userSettings);
+      try { calcAllCrowding(); } catch(e) {}
+      try { calcAllShortSignals(); } catch(e) {}
+      console.log('[settings] 重新评分完成');
+    } catch(e) {
+      console.error('[settings] 重新评分失败:', e.message);
+    }
+  }, 100);
   res.json({ ok: true, settings: userSettings });
 });
 

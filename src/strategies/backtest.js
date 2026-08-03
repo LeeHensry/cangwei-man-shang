@@ -7,35 +7,69 @@ const dayjs = require('dayjs');
 
 function runBacktest(params) {
   const {
-    startDate = '20240101',
+    startDate,
     endDate = dayjs().format('YYYYMMDD'),
     initialCapital = 1000000,
     topN = 10,
     stopLossPct = -15,
     takeProfitPct = 40,
-    maShort = 20,
-    maLong = 60,
+    maShort = 10,
+    maLong = 20,
   } = params;
+
+  // 如果没有指定startDate，自动检测可用数据范围
+  const dateRange = db.prepare(`
+    SELECT MIN(trade_date) as min_d, MAX(trade_date) as max_d, COUNT(DISTINCT trade_date) as cnt
+    FROM daily_kline
+  `).get();
+
+  const actualStart = startDate || dateRange.min_d;
+  const actualEnd = endDate || dateRange.max_d;
 
   const tradeDates = db.prepare(`
     SELECT DISTINCT trade_date FROM daily_kline 
     WHERE trade_date >= ? AND trade_date <= ? 
     ORDER BY trade_date ASC
-  `).all(startDate, endDate).map(r => r.trade_date);
+  `).all(actualStart, actualEnd).map(r => r.trade_date);
 
-  if (tradeDates.length < maLong + 20) {
-    return { error: `回测周期太短，需要至少${maLong+20}个交易日` };
+  // 根据实际数据量自动调整均线参数
+  const availableDays = tradeDates.length;
+  let effMaShort = maShort;
+  let effMaLong = maLong;
+  let dataNote = '';
+
+  if (availableDays < maLong + 20) {
+    // 数据不足，自动降级参数
+    if (availableDays >= 40) {
+      effMaShort = 5;
+      effMaLong = 10;
+      dataNote = `当前仅有${availableDays}个交易日数据，已自动调整为MA5/MA10短周期回测。点击"全量同步"可获取3年历史数据进行长期回测。`;
+    } else if (availableDays >= 25) {
+      effMaShort = 5;
+      effMaLong = 10;
+      dataNote = `当前仅有${availableDays}个交易日，回测结果参考性有限，建议先执行全量数据同步。`;
+    } else {
+      return { error: `回测数据不足：当前仅${availableDays}个交易日，需要至少25个交易日。请先执行数据同步。` };
+    }
+  }
+
+  const minRequired = effMaLong + 10;
+  if (tradeDates.length < minRequired) {
+    return { error: `回测周期太短，需要至少${minRequired}个交易日（当前${tradeDates.length}个）。请扩大日期范围或执行全量同步。` };
   }
 
   // 股票池（有足够历史数据的非ST股）
+  const requiredKlines = Math.min(effMaLong + 15, availableDays - 5);
   const stockCodes = db.prepare(`
     SELECT DISTINCT dk.code FROM daily_kline dk
     JOIN stock_info si ON dk.code = si.code
     WHERE si.is_st = 0
     GROUP BY dk.code HAVING COUNT(*) >= ?
-  `).all(maLong + 30).map(r => r.code);
+  `).all(requiredKlines).map(r => r.code);
 
-  if (stockCodes.length < 20) return { error: '有效股票数量不足' };
+  if (stockCodes.length < 10) {
+    return { error: `有效股票数量不足（${stockCodes.length}只），需要至少10只。请先执行数据同步。` };
+  }
 
   const nameMap = {};
   db.prepare('SELECT code, name FROM stock_info').all().forEach(r => { nameMap[r.code] = r.name; });
@@ -48,7 +82,7 @@ function runBacktest(params) {
   let maxDrawdown = 0;
   let lastMonth = null;
 
-  for (let di = maLong; di < tradeDates.length; di++) {
+  for (let di = effMaLong; di < tradeDates.length; di++) {
     const date = tradeDates[di];
     const monthKey = date.substring(0, 6);
 
@@ -94,23 +128,25 @@ function runBacktest(params) {
       });
     }
 
-    // 月初调仓
-    if (monthKey !== lastMonth) {
-      lastMonth = monthKey;
+    // 月初调仓（如果数据量少则每周调仓）
+    const rebalanceKey = availableDays < 60 ? date.substring(0, 7) + '-' + Math.floor(parseInt(date.substring(6,8))/7) : monthKey;
+    if (rebalanceKey !== lastMonth) {
+      lastMonth = rebalanceKey;
       const candidates = [];
-      // 对每只股票算均线+动量
-      for (const code of stockCodes.slice(0, 80)) { // 限制数量防超时
+      // 扫描股票池
+      const scanLimit = Math.min(stockCodes.length, 200);
+      for (const code of stockCodes.slice(0, scanLimit)) {
         const ks = db.prepare(
-          `SELECT close FROM daily_kline WHERE code=? AND trade_date<=? ORDER BY trade_date DESC LIMIT ${maLong+5}`
+          `SELECT close FROM daily_kline WHERE code=? AND trade_date<=? ORDER BY trade_date DESC LIMIT ${effMaLong+5}`
         ).all(code, date);
-        if (ks.length < maLong) continue;
+        if (ks.length < effMaLong) continue;
         const closes = ks.map(k=>k.close).reverse();
-        const maS = closes.slice(-maShort).reduce((a,b)=>a+b,0)/maShort;
-        const maL = closes.slice(-maLong).reduce((a,b)=>a+b,0)/maLong;
+        const maS = closes.slice(-effMaShort).reduce((a,b)=>a+b,0)/effMaShort;
+        const maL = closes.slice(-effMaLong).reduce((a,b)=>a+b,0)/effMaLong;
         const cur = closes[closes.length-1];
-        const prev = closes[closes.length-maShort-1] || cur;
+        const prev = closes[closes.length-effMaShort-1] || cur;
         const momentum = (cur - prev) / prev * 100;
-        if (cur > maS && maS > maL && momentum < 20 && momentum > -5) {
+        if (cur > maS && maS > maL && momentum < 25 && momentum > -8) {
           candidates.push({ code, momentum, close: cur });
         }
       }
@@ -155,8 +191,8 @@ function runBacktest(params) {
 
   const finalNav = navCurve[navCurve.length-1]?.value || 1;
   const totalReturn = (finalNav - 1)*100;
-  const years = Math.max(0.5, dayjs(endDate).diff(dayjs(startDate),'year',true));
-  const annualReturn = (Math.pow(finalNav, 1/years)-1)*100;
+  const years = Math.max(0.1, dayjs(actualEnd, 'YYYYMMDD').diff(dayjs(actualStart, 'YYYYMMDD'),'year',true));
+  const annualReturn = years >= 0.5 ? (Math.pow(finalNav, 1/years)-1)*100 : totalReturn / years * (tradeDates.length / 252);
 
   const wins = trades.filter(t=>t.pnl>0);
   const losses = trades.filter(t=>t.pnl<=0);
@@ -188,7 +224,7 @@ function runBacktest(params) {
   }));
 
   return {
-    params: { startDate, endDate, initialCapital, topN, stopLossPct, takeProfitPct },
+    params: { startDate: actualStart, endDate: actualEnd, initialCapital, topN, stopLossPct, takeProfitPct, maShort: effMaShort, maLong: effMaLong },
     summary: {
       total_return: +totalReturn.toFixed(2),
       annual_return: +annualReturn.toFixed(2),
@@ -201,12 +237,15 @@ function runBacktest(params) {
       avg_win: +avgWin.toFixed(2),
       avg_loss: +avgLoss.toFixed(2),
       final_value: Math.round(initialCapital*finalNav),
-      years: +years.toFixed(1),
+      years: +years.toFixed(2),
+      trading_days: tradeDates.length,
+      stock_count: stockCodes.length,
     },
     nav_curve: navCurve,
     trades: trades.slice(-100).reverse(),
     final_positions: finalPositions,
-    note: `均线趋势策略：MA${maShort}上穿MA${maLong}买入，月度调仓，止损${Math.abs(stopLossPct)}%/止盈${takeProfitPct}%`,
+    note: `均线趋势策略：MA${effMaShort}上穿MA${effMaLong}买入，${availableDays < 60 ? '周度' : '月度'}调仓，止损${Math.abs(stopLossPct)}%/止盈${takeProfitPct}%`,
+    data_note: dataNote,
   };
 }
 

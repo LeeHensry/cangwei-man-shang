@@ -1,6 +1,6 @@
 {
   "name": "stock-advisor",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "🥃 仓位满上 Top Up - A股智能决策辅助系统",
   "main": "server.js",
   "scripts": {

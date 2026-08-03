@@ -273,5 +273,12 @@ CREATE TABLE IF NOT EXISTS short_signals (
 db.exec(`CREATE INDEX IF NOT EXISTS idx_short_date ON short_signals(trade_date)`);
 }
 
+// 应用设置表（持久化用户配置）
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT
+)`);
+
 console.log('✅ 数据库初始化完成');
 module.exports = db;

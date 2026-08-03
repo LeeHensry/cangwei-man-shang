@@ -621,28 +621,32 @@ function calcTechnicalScore(code) {
 }
 
 // ========== 综合评分 & 信号 v2（含拥挤度调整）==========
-function calcTotalScore(code, qualityResult, valuationResult, technicalResult, crowdingResult) {
+function calcTotalScore(code, qualityResult, valuationResult, technicalResult, crowdingResult, userSettings = null) {
   // 行业动态权重
   const industry = classifyIndustry(code);
   const ind = industry.group;
   
-  // 默认权重
-  let W_QUALITY = 0.35;
-  let W_VALUATION = 0.40;
-  let W_TECHNICAL = 0.25;
+  // 从用户设置获取权重（百分比转小数），否则使用默认
+  const s = userSettings || {};
+  let W_QUALITY = (s.qualWeight != null ? s.qualWeight / 100 : null);
+  let W_VALUATION = (s.valWeight != null ? s.valWeight / 100 : null);
+  let W_TECHNICAL = (s.techWeight != null ? s.techWeight / 100 : null);
   
-  // 新经济：质量和技术更重要，估值容忍度更高
-  if (industry.isNewEconomy) {
-    W_QUALITY = 0.40;
-    W_VALUATION = 0.30;
-    W_TECHNICAL = 0.30;
+  // 如果没有自定义权重，按行业使用默认动态权重
+  if (W_QUALITY == null || W_VALUATION == null || W_TECHNICAL == null) {
+    W_QUALITY = 0.35; W_VALUATION = 0.40; W_TECHNICAL = 0.25;
+    if (industry.isNewEconomy) { W_QUALITY = 0.40; W_VALUATION = 0.30; W_TECHNICAL = 0.30; }
+    if (industry.isOldman) { W_QUALITY = 0.25; W_VALUATION = 0.55; W_TECHNICAL = 0.20; }
   }
-  // 老登股：估值权重更高（因为增长没指望，只能赚估值修复的钱）
-  if (industry.isOldman) {
-    W_QUALITY = 0.25;
-    W_VALUATION = 0.55;
-    W_TECHNICAL = 0.20;
-  }
+  
+  // 信号阈值（用户自定义或默认）
+  const BUY_QUAL = s.buyThreshold || 70;
+  const BUY_VAL = s.watchThreshold ? Math.max(50, s.watchThreshold - 10) : 65;
+  const BUY_TECH = s.buyTechThreshold || 45;
+  const WATCH_QUAL = s.watchThreshold || 60;
+  const WATCH_VAL = Math.max(40, (s.watchThreshold || 60) - 10);
+  const SELL_VAL = s.sellThreshold ? 100 - s.sellThreshold : 15;
+  const SELL_QUAL = Math.max(25, 100 - (s.buyThreshold || 70) - 5);
   
   let totalScore = Math.round(
     qualityResult.score * W_QUALITY +
@@ -711,25 +715,25 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
   }
   
   // ==== 常规信号判断 ====
-  if (qualityResult.score >= 70 && valuationResult.score >= 65) {
-    if (technicalResult.score >= 45) {
+  if (qualityResult.score >= BUY_QUAL && valuationResult.score >= BUY_VAL) {
+    if (technicalResult.score >= BUY_TECH) {
       signal = 'buy';
       reason.push(industry.isNewEconomy ? '优质成长股+估值合理+技术企稳' : '优质公司+低估区间+技术面企稳');
     } else {
       signal = 'watch';
       reason.push(industry.isNewEconomy ? '优质成长股估值合理，但技术面尚未企稳' : '基本面良好+低估，但等技术面企稳再入场');
     }
-  } else if (qualityResult.score >= 60 && valuationResult.score >= 50) {
+  } else if (qualityResult.score >= WATCH_QUAL && valuationResult.score >= WATCH_VAL) {
     signal = 'watch';
     reason.push('基本面尚可，估值进入合理区间');
     if (industry.isNewEconomy) reason.push('新经济方向');
-  } else if (valuationResult.score <= 15) {
+  } else if (valuationResult.score <= SELL_VAL) {
     signal = 'sell';
     reason.push('估值处于高位，建议减仓');
-  } else if (qualityResult.score < 35) {
+  } else if (qualityResult.score < SELL_QUAL) {
     signal = 'sell';
     reason.push(industry.isOldman ? '基本面偏弱的老登股，建议回避' : '基本面质量不佳');
-  } else if (industry.isOldman && qualityResult.score < 50) {
+  } else if (industry.isOldman && qualityResult.score < Math.max(WATCH_QUAL - 10, 40)) {
     signal = 'sell';
     reason.push('传统老登股且基本面一般，资金效率低');
   }
@@ -756,7 +760,7 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
 }
 
 // ========== 批量评分 ==========
-async function scoreAllStocks(syncFinance = true, includeCrowding = true) {
+async function scoreAllStocks(syncFinance = true, includeCrowding = true, settings = null) {
   // 优先从股票池取代码，fallback到stock_info
   let codes = db.prepare('SELECT code, name FROM stock_pool WHERE in_pool = 1').all();
   if (codes.length === 0) {
@@ -825,7 +829,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true) {
         } catch(e) {}
       }
       
-      const total = calcTotalScore(code, quality, valuation, technical, crowdingResult);
+      const total = calcTotalScore(code, quality, valuation, technical, crowdingResult, settings);
       
       const latestKline = db.prepare('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1').get(code);
       const currentPrice = latestKline?.close;
