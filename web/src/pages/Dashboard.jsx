@@ -103,22 +103,24 @@ export default function Dashboard() {
     }],
   };
 
-  // 行业涨跌
-  const sectors = [...(data.sectors||[])].sort((a,b) => (a.change_pct||0) - (b.change_pct||0));
+  // 行业涨跌（横向条形图，显示涨跌TOP各5）
+  const sectorUp = [...(data.sectors||[])].sort((a,b) => (b.change_pct||0) - (a.change_pct||0)).slice(0, 5);
+  const sectorDown = [...(data.sectors||[])].sort((a,b) => (a.change_pct||0) - (b.change_pct||0)).slice(0, 5);
+  const sectorsForChart = [...sectorDown.reverse(), ...sectorUp];
   const sectorOption = {
-    grid: { left: 76, right: 40, top: 4, bottom: 4 },
-    xAxis: { type: 'value', show: false },
-    yAxis: { type: 'category', data: sectors.map(s => s.sector_name),
-      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 11, color: '#475467' }
+    grid: { left: 68, right: 36, top: 2, bottom: 2 },
+    xAxis: { type: 'value', show: false, min: (v) => Math.floor(v.min - 0.3), max: (v) => Math.ceil(v.max + 0.3) },
+    yAxis: { type: 'category', data: sectorsForChart.map(s => s.sector_name),
+      axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 10, color: '#475467' }
     },
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(16,24,40,0.9)', borderWidth:0, textStyle:{color:'#fff',fontSize:12} },
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(16,24,40,0.9)', borderWidth:0, textStyle:{color:'#fff',fontSize:11} },
     series: [{
-      type: 'bar', data: sectors.map(s => ({
+      type: 'bar', data: sectorsForChart.map(s => ({
         value: +(s.change_pct||0).toFixed(2),
-        itemStyle: { color: (s.change_pct||0) >= 0 ? '#f04438' : '#12b76a', borderRadius: (s.change_pct||0) >= 0 ? [0,3,3,0] : [3,0,0,3] }
+        itemStyle: { color: (s.change_pct||0) >= 0 ? '#EF4444' : '#22C55E', borderRadius: (s.change_pct||0) >= 0 ? [0,3,3,0] : [3,0,0,3] }
       })),
-      barWidth: 11,
-      label: { show: true, position: 'right', formatter: '{c}%', fontSize: 10, color: '#667085', fontWeight: 500 },
+      barWidth: 10,
+      label: { show: true, position: 'right', formatter: '{c}%', fontSize: 9, color: '#667085', fontWeight: 500 },
     }],
   };
 
@@ -263,7 +265,7 @@ export default function Dashboard() {
         {data.indices.map(idx => <Col flex="1" key={idx.code}><IndexCard item={idx} /></Col>)}
       </Row>
 
-      {/* 温度计6 + 信号5 + 行业5  等分 */}
+      {/* 温度计6 + 信号分布(含行业涨跌)18  等分 */}
       <Row gutter={[10,10]} style={{ marginBottom: 12 }}>
         {/* 市场温度计 */}
         <Col span={8}>
@@ -312,16 +314,27 @@ export default function Dashboard() {
           </Card>
         </Col>
 
-        {/* 信号分布 */}
-        <Col span={8}>
-          <Card title={<span style={{fontSize:13,fontWeight:600}}>信号分布</span>} bodyStyle={{ padding: '12px 12px' }} style={{ height: '100%' }}>
-            <Row gutter={0} style={{ textAlign: 'center' }}>
+        {/* 信号分布 + 行业涨跌（整合） */}
+        <Col span={16}>
+          <Card
+            title={
+              <Space size={8}>
+                <CheckCircleOutlined style={{color:'var(--accent)'}}/>
+                <span style={{fontSize:13,fontWeight:600}}>信号分布</span>
+                <Text type="secondary" style={{fontSize:11,fontWeight:400}}>· 行业来源：新浪财经行业板块</Text>
+              </Space>
+            }
+            bodyStyle={{ padding: '12px 16px' }}
+            style={{ height: '100%' }}
+          >
+            {/* 信号数字行 */}
+            <Row gutter={0} style={{ textAlign: 'center', marginBottom: 8 }}>
               {['buy','momentum_buy','watch','hold','sell'].map(key => {
                 const meta = signalMeta[key];
                 const count = data.signal_counts[key] || 0;
                 const pct = Math.round(count/signalTotal*100);
                 return (
-                  <Col span={key==='momentum_buy'?5:key==='watch'?4:5} key={key}>
+                  <Col key={key}>
                     <div style={{ fontSize: 22, fontWeight: 700, color: meta.color, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{count}</div>
                     <div className={'signal-badge signal-'+key} style={{ margin: '6px auto 2px', fontSize: 10 }}>
                       {meta.label}
@@ -331,37 +344,41 @@ export default function Dashboard() {
                 );
               })}
             </Row>
-            <Divider style={{ margin: '12px 0 8px' }} />
-            {/* 资金流向 */}
+            <Divider style={{ margin: '8px 0' }} />
+            {/* 行业涨跌条形图（整合到信号分布卡片） */}
             <div>
-              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><FireOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>行业资金方向</Text>
-              <div style={{ marginTop: 6 }}>
-                {(t.top_flow_sectors||[]).slice(0,3).map((s,i) => (
-                  <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 3 }}>
-                    <Text>{s.name}</Text>
-                    <Text style={{color:'var(--up)',fontFamily:'var(--font-mono)',fontWeight:600}}>+{s.net_inflow}亿</Text>
-                  </div>
-                ))}
-                {(t.top_flow_sectors||[]).length === 0 && (
-                  <Text type="secondary" style={{fontSize:11}}>今日全市场净流出，无净流入行业</Text>
-                )}
-                <div style={{marginTop:4,borderTop:'1px dashed #E8E8ED',paddingTop:4}}>
-                  {(t.worst_flow_sectors||[]).slice(0,2).map((s,i) => (
-                    <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 2 }}>
-                      <Text type="secondary">{s.name}</Text>
-                      <Text style={{color:'var(--down)',fontFamily:'var(--font-mono)',fontWeight:600}}>{s.net_inflow}亿</Text>
+              <Row gutter={12}>
+                <Col span={14}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><RiseOutlined style={{color:'var(--up)',fontSize:11,marginRight:2}}/>行业涨跌（实时）</Text>
+                  <ReactECharts option={sectorOption} style={{ height: 170, marginTop: 2 }} />
+                </Col>
+                <Col span={10}>
+                  {/* 资金流向 */}
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><FireOutlined style={{color:'var(--warn)',fontSize:11,marginRight:2}}/>行业资金方向</Text>
+                  <div style={{ marginTop: 6 }}>
+                    <Text style={{fontSize:10,color:'var(--up)',fontWeight:600}}>▲ 净流入 TOP3</Text>
+                    {(t.top_flow_sectors||[]).slice(0,3).map((s,i) => (
+                      <div key={'in'+i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 3 }}>
+                        <Text>{s.name}</Text>
+                        <Text style={{color:'var(--up)',fontFamily:'var(--font-mono)',fontWeight:600}}>+{s.net_inflow}亿</Text>
+                      </div>
+                    ))}
+                    {(t.top_flow_sectors||[]).length === 0 && (
+                      <Text type="secondary" style={{fontSize:11}}>无明显净流入</Text>
+                    )}
+                    <div style={{marginTop:6,borderTop:'1px dashed #E8E8ED',paddingTop:6}}>
+                      <Text style={{fontSize:10,color:'var(--down)',fontWeight:600}}>▼ 净流出 TOP3</Text>
+                      {(t.worst_flow_sectors||[]).slice(0,3).map((s,i) => (
+                        <div key={'out'+i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 2 }}>
+                          <Text type="secondary">{s.name}</Text>
+                          <Text style={{color:'var(--down)',fontFamily:'var(--font-mono)',fontWeight:600}}>{s.net_inflow}亿</Text>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                </Col>
+              </Row>
             </div>
-          </Card>
-        </Col>
-
-        {/* 行业涨跌 */}
-        <Col span={8}>
-          <Card title={<span style={{fontSize:13,fontWeight:600}}>行业涨跌</span>} bodyStyle={{ padding: '4px 2px' }} style={{ height: '100%' }}>
-            <ReactECharts option={sectorOption} style={{ height: 260 }} />
           </Card>
         </Col>
       </Row>

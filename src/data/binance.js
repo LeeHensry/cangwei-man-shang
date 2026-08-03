@@ -123,12 +123,31 @@ function calcIndicators(klines) {
   const sma5 = SMA(5), sma10 = SMA(10), sma20 = SMA(20), sma60 = SMA(60);
   const ema12 = EMA(12), ema26 = EMA(26);
   const macdDif = ema12 && ema26 ? ema12 - ema26 : null;
-  // 简化MACD DEA
+  // 计算MACD DEA（标准9日EMA of DIF）
   let macdDea = null, macdBar = null;
-  if (ema12 && ema26) {
-    // 9日EMA of dif (approximate: only have current dif)
-    macdDea = macdDif * 0.8; // 简化
-    macdBar = 2*(macdDif - macdDea);
+  if (ema12 && ema26 && n >= 35) {
+    // 需要完整DIF序列来计算DEA（9日EMA of DIF）
+    const difSeries = [];
+    for (let i = 26; i < n; i++) {
+      // 递归计算到i位置的EMA12和EMA26
+      const k12 = 2/13, k26 = 2/27;
+      let e12 = closes.slice(0,12).reduce((a,b)=>a+b,0)/12;
+      let e26 = closes.slice(0,26).reduce((a,b)=>a+b,0)/26;
+      for (let j = 26; j <= i; j++) {
+        e12 = closes[j]*k12 + e12*(1-k12);
+        e26 = closes[j]*k26 + e26*(1-k26);
+      }
+      difSeries.push(e12 - e26);
+    }
+    if (difSeries.length >= 9) {
+      const k9 = 2/10;
+      let dea = difSeries.slice(0,9).reduce((a,b)=>a+b,0)/9;
+      for (let i = 9; i < difSeries.length; i++) {
+        dea = difSeries[i]*k9 + dea*(1-k9);
+      }
+      macdDea = dea;
+      macdBar = 2*(macdDif - macdDea);
+    }
   }
   const rsi = RSI(14);
   const bollMid = sma20;
@@ -138,7 +157,7 @@ function calcIndicators(klines) {
 
   // 成交量均线
   const volMA5 = volumes.length >= 5 ? volumes.slice(-5).reduce((a,b)=>a+b,0)/5 : null;
-  const volMA20 = volumes.length >= 20 ? volumes.slice(-20).reduce((a,b)=>a+b,0)/5 : null;
+  const volMA20 = volumes.length >= 20 ? volumes.slice(-20).reduce((a,b)=>a+b,0)/20 : null;
 
   return {
     sma5, sma10, sma20, sma60,
@@ -240,7 +259,8 @@ async function analyzeSymbol(symbol) {
   let action = '观望';
   let leverage = 0;
   let stopLossPct = 5;
-  let targetPct = 10;
+  let targetPct = 12;
+  let isShort = false;
   if (score.total >= 72) {
     signal = 'long';
     action = '做多';
@@ -251,6 +271,7 @@ async function analyzeSymbol(symbol) {
     signal = 'short';
     action = '做空/回避';
     leverage = 2;
+    isShort = true;
     stopLossPct = 5;
     targetPct = 12;
   } else if (score.total >= 60) {
@@ -273,8 +294,12 @@ async function analyzeSymbol(symbol) {
     signal,
     action,
     leverage,
-    stop_loss: +(ticker.price * (1 - stopLossPct/100)).toFixed(4),
-    target: +(ticker.price * (1 + targetPct/100)).toFixed(4),
+    stop_loss: isShort
+      ? +(ticker.price * (1 + stopLossPct/100)).toFixed(4)   // 做空止损在上方
+      : +(ticker.price * (1 - stopLossPct/100)).toFixed(4),  // 做多止损在下方
+    target: isShort
+      ? +(ticker.price * (1 - targetPct/100)).toFixed(4)     // 做空止盈在下方
+      : +(ticker.price * (1 + targetPct/100)).toFixed(4),    // 做多止盈在上方
     reasons: score.reasons.slice(0,5),
     risks: score.risks.slice(0,5),
     rsi: ind.rsi14 ? +ind.rsi14.toFixed(0) : null,
