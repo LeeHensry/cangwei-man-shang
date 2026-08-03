@@ -13,10 +13,10 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  buy:    { label: '短线买入', color: '#f5222d', bg: '#fff1f0', icon: <RocketOutlined/> },
-  watch:  { label: '关注',     color: '#fa8c16', bg: '#fff7e6', icon: <ThunderboltOutlined/> },
-  sell:   { label: '回避',     color: '#52c41a', bg: '#f6ffed', icon: <ArrowDownOutlined/> },
-  hold:   { label: '中性',     color: '#8c8c8c', bg: '#fafafa', icon: null },
+  buy:    { label: '短线买入', color: '#f5222d', bg: 'rgba(239,68,68,0.08)', icon: <RocketOutlined/> },
+  watch:  { label: '关注',     color: '#fa8c16', bg: 'rgba(249,115,22,0.08)', icon: <ThunderboltOutlined/> },
+  sell:   { label: '回避',     color: '#52c41a', bg: 'rgba(34,197,94,0.08)', icon: <ArrowDownOutlined/> },
+  hold:   { label: '中性',     color: '#8c8c8c', bg: '#F1F5F9', icon: null },
 };
 
 export default function ShortTerm() {
@@ -90,7 +90,7 @@ export default function ShortTerm() {
           <div style={{ fontWeight: 700, fontSize: 16,
             color: v >= 75 ? '#f5222d' : v >= 65 ? '#fa8c16' : '#8c8c8c' }}>{v}</div>
           <Progress percent={v} showInfo={false} strokeColor={
-            v >= 75 ? '#f5222d' : v >= 65 ? '#fa8c16' : '#d9d9d9'
+            v >= 75 ? '#f5222d' : v >= 65 ? '#fa8c16' : '#F1F5F9'
           } size="small" style={{ width: 80, margin: '2px auto 0' }}/>
         </div>
       ),
@@ -179,7 +179,7 @@ export default function ShortTerm() {
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: buyCount > 0 ? '#fff1f0' : '#fafafa' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: buyCount > 0 ? 'rgba(239,68,68,0.06)' : '#FFFFFF' }}>
             <Statistic
               title={<span style={{ fontSize:12 }}><RocketOutlined /> 短线买入</span>}
               value={buyCount}
@@ -199,7 +199,7 @@ export default function ShortTerm() {
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: sellCount > 0 ? '#f6ffed' : '#fafafa' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: sellCount > 0 ? 'rgba(34,197,94,0.06)' : '#FFFFFF' }}>
             <Statistic
               title={<span style={{ fontSize:12 }}><WarningOutlined /> 回避信号</span>}
               value={sellCount}
@@ -226,8 +226,7 @@ export default function ShortTerm() {
       </Card>
 
       <style>{`
-        .row-buy { background: #fff1f022 !important; }
-        .row-buy:hover td { background: #fff1f055 !important; }
+        .row-buy { background: rgba(239,68,68,0.06) !important; }
       `}</style>
     </div>
   );

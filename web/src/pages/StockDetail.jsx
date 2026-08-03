@@ -11,10 +11,10 @@ import { getStockDetail } from '../api';
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  buy: { color: '#f04438', label: '🟢 买入建议', bg: '#fef3f2' },
-  watch: { color: '#b54708', label: '🟡 建议关注', bg: '#fffaeb' },
-  hold: { color: '#175cd3', label: '⚪ 继续持有', bg: '#f0f9ff' },
-  sell: { color: '#027a48', label: '🔴 建议减仓', bg: '#ecfdf3' },
+  buy: { color: '#f04438', label: '🟢 买入建议', bg: 'rgba(239,68,68,0.08)' },
+  watch: { color: '#b54708', label: '🟡 建议关注', bg: 'rgba(249,115,22,0.08)' },
+  hold: { color: '#175cd3', label: '⚪ 继续持有', bg: 'rgba(59,130,246,0.08)' },
+  sell: { color: '#027a48', label: '🔴 建议减仓', bg: 'rgba(34,197,94,0.08)' },
 };
 
 function ScoreRing({ value, color, size = 80, label }) {
@@ -23,16 +23,16 @@ function ScoreRing({ value, color, size = 80, label }) {
       type: 'gauge', radius: '100%', center: ['50%','55%'],
       startAngle: 220, endAngle: -40, min:0, max:100,
       progress: { show: true, width: 8, roundCap: true, itemStyle: { color } },
-      axisLine: { lineStyle: { width: 8, color: [[1,'#f2f4f7']], roundCap: true } },
+      axisLine: { lineStyle: { width: 8, color: [[1,'#F1F5F9']], roundCap: true } },
       pointer: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
       title: { show: false },
-      detail: { valueAnimation: true, fontSize: 22, fontWeight: 700, color: '#101828', offsetCenter: [0,0],
+      detail: { valueAnimation: true, fontSize: 22, fontWeight: 700, color: '#0F172A', offsetCenter: [0,0],
         formatter: () => value, fontFamily: 'Inter' },
       data: [{ value }],
     }],
     graphic: [{
       type: 'text', bottom: 10, left: 'center',
-      style: { text: label, fontSize: 11, fill: '#98a2b3', fontWeight: 500 }
+      style: { text: label, fontSize: 11, fill: '#94A3B8', fontWeight: 500 }
     }],
   };
   return <ReactECharts option={option} style={{ height: size + 20, width: size }} />;
@@ -71,7 +71,7 @@ export default function StockDetail() {
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' },
       backgroundColor: 'rgba(16,24,40,0.92)', borderWidth:0, textStyle:{color:'#fff',fontSize:12},
     },
-    legend: { data:['K','MA5','MA20','MA60'], top: 8, right: 16, textStyle:{fontSize:11,color:'#667085'},
+    legend: { data:['K','MA5','MA20','MA60'], top: 8, right: 16, textStyle:{fontSize:11,color:'#94A3B8'},
       itemWidth: 14, itemHeight: 2,
     },
     grid: [
@@ -81,13 +81,13 @@ export default function StockDetail() {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     xAxis: [
       { type: 'category', data: dates, scale: true, boundaryGap: false,
-        axisLine: { lineStyle: { color: '#eaecf0' } }, axisLabel: { fontSize: 10, color: '#98a2b3' },
+        axisLine: { lineStyle: { color: '#E2E8F0' } }, axisLabel: { fontSize: 10, color: '#94A3B8' },
         splitLine: { show: false }, min: 'dataMin', max: 'dataMax' },
       { type: 'category', gridIndex: 1, data: dates, axisLabel: { show:false }, axisLine: {show:false}, axisTick:{show:false}, splitLine:{show:false} },
     ],
     yAxis: [
-      { scale: true, splitLine: { lineStyle: { type: 'dashed', color: '#f5f5f5' } },
-        axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 10, color: '#98a2b3' } },
+      { scale: true, splitLine: { lineStyle: { type: 'dashed', color: '#E2E8F0' } },
+        axisLine: { show: false }, axisTick: { show: false }, axisLabel: { fontSize: 10, color: '#94A3B8' } },
       { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show:false }, axisLine:{show:false}, axisTick:{show:false}, splitLine:{show:false} },
     ],
     dataZoom: [
@@ -107,16 +107,16 @@ export default function StockDetail() {
   const radarOption = {
     radar: {
       indicator: [
-        { name: '盈利能力', max: 30, color: '#667085' },
-        { name: '成长性', max: 25, color: '#667085' },
-        { name: '财务健康', max: 25, color: '#667085' },
-        { name: '稳定性', max: 20, color: '#667085' },
+        { name: '盈利能力', max: 30, color: '#94A3B8' },
+        { name: '成长性', max: 25, color: '#94A3B8' },
+        { name: '财务健康', max: 25, color: '#94A3B8' },
+        { name: '稳定性', max: 20, color: '#94A3B8' },
       ],
       radius: '65%', center: ['50%','55%'],
-      axisName: { fontSize: 11, color: '#475467' },
-      splitArea: { areaStyle: { color: ['#fafbfc','#fff'] } },
-      axisLine: { lineStyle: { color: '#eaecf0' } },
-      splitLine: { lineStyle: { color: '#eaecf0' } },
+      axisName: { fontSize: 11, color: '#94A3B8' },
+      splitArea: { areaStyle: { color: ['#F8FAFC','#fff'] } },
+      axisLine: { lineStyle: { color: '#E2E8F0' } },
+      splitLine: { lineStyle: { color: '#E2E8F0' } },
     },
     series: [{
       type: 'radar',
@@ -134,7 +134,7 @@ export default function StockDetail() {
 
   return (
     <div>
-      <a onClick={() => navigate(-1)} style={{ marginBottom: 16, display: 'inline-block', fontSize: 13, color: '#667085' }}>
+      <a onClick={() => navigate(-1)} style={{ marginBottom: 16, display: 'inline-block', fontSize: 13, color: '#94A3B8' }}>
         <ArrowLeftOutlined /> 返回
       </a>
 
@@ -167,14 +167,14 @@ export default function StockDetail() {
               }}>
                 <div style={{ fontSize: 13, color: signalMeta[s.signal].color, fontWeight: 600 }}>{signalMeta[s.signal].label}</div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: signalMeta[s.signal].color, fontFamily: 'Inter', lineHeight: 1.2 }}>{s.total}</div>
-                <div style={{ fontSize: 11, color: '#98a2b3' }}>综合评分</div>
+                <div style={{ fontSize: 11, color: '#94A3B8' }}>综合评分</div>
               </div>
             </Col>
           )}
         </Row>
 
         {s.signal === 'buy' && (
-          <div style={{ marginTop: 20, padding: '16px 20px', background: '#fef3f2', borderRadius: 10, border: '1px solid #fee4e2' }}>
+          <div style={{ marginTop: 20, padding: '16px 20px', background: 'rgba(239,68,68,0.06)', borderRadius: 10, border: '1px solid rgba(239,68,68,0.2)' }}>
             <Row gutter={24}>
               <Col span={6}>
                 <Statistic title="💡 建议仓位" value={s.position_pct||10} suffix="%" valueStyle={{ fontSize: 22, fontWeight:700, color:'#f04438' }} />
@@ -201,13 +201,13 @@ export default function StockDetail() {
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
             <ScoreRing value={s.quality} color="#12b76a" label="质量" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>质量评分</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#0F172A', marginBottom: 8 }}>质量评分</div>
               <Space direction="vertical" size={2} style={{ width: '100%' }}>
                 {[['盈利',qd.profit,30],['成长',qd.growth,25],['健康',qd.health,25],['稳定',qd.extra,20]].map(([name,v,max])=>(
                   <div key={name} style={{display:'flex',alignItems:'center',gap:8}}>
-                    <Text style={{fontSize:11,color:'#667085',width:32}}>{name}</Text>
+                    <Text style={{fontSize:11,color:'#94A3B8',width:32}}>{name}</Text>
                     <Progress percent={Math.round(v/max*100)} showInfo={false} strokeColor="#12b76a" size="small" style={{flex:1}} />
-                    <Text style={{fontSize:11,fontFamily:'Inter',width:20,textAlign:'right',color:'#475467'}}>{v}</Text>
+                    <Text style={{fontSize:11,fontFamily:'Inter',width:20,textAlign:'right',color:'#94A3B8'}}>{v}</Text>
                   </div>
                 ))}
               </Space>
@@ -218,8 +218,8 @@ export default function StockDetail() {
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
             <ScoreRing value={s.valuation} color="#f04438" label="估值" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>估值水平</div>
-              <Descriptions column={1} size="small" colon={false} labelStyle={{width:'auto',fontSize:12,color:'#667085',padding:'2px 0'}} contentStyle={{fontSize:12,padding:'2px 0',fontFamily:'Inter',textAlign:'right'}}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#0F172A', marginBottom: 8 }}>估值水平</div>
+              <Descriptions column={1} size="small" colon={false} labelStyle={{width:'auto',fontSize:12,color:'#94A3B8',padding:'2px 0'}} contentStyle={{fontSize:12,padding:'2px 0',fontFamily:'Inter',textAlign:'right'}}>
                 <Descriptions.Item label="PE(TTM)"><Text strong>{vd.current_pe}x</Text></Descriptions.Item>
                 <Descriptions.Item label="价格位置"><Text strong>{vd.price_percentile}%</Text></Descriptions.Item>
                 <Descriptions.Item label={vd.price_percentile<30?'判断':'判断'}>
@@ -235,11 +235,11 @@ export default function StockDetail() {
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
             <ScoreRing value={s.technical} color="#2e90fa" label="技术" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>技术面</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#0F172A', marginBottom: 8 }}>技术面</div>
               <div style={{fontSize:12}}>
                 {(td.signals||[]).slice(0,5).map((sig,i)=>{
                   const isPos = sig.includes('+');
-                  return <Tag key={i} color={isPos?'blue':'red'} style={{margin:'0 4px 4px 0',fontSize:11,borderRadius:6,background:isPos?'#eff8ff':'#fef3f2',borderColor:isPos?'#d1e9ff':'#fecdca',color:isPos?'#175cd3':'#b42318'}}>{sig.replace('+','↑').replace('-','↓')}</Tag>;
+                  return <Tag key={i} color={isPos?'blue':'red'} style={{margin:'0 4px 4px 0',fontSize:11,borderRadius:6,background:isPos?'rgba(59,130,246,0.08)':'rgba(239,68,68,0.08)',borderColor:isPos?'rgba(59,130,246,0.3)':'rgba(239,68,68,0.3)',color:isPos?'#175cd3':'#b42318'}}>{sig.replace('+','↑').replace('-','↓')}</Tag>;
                 })}
                 {(!td.signals||td.signals.length===0) && <Text type="secondary">暂无明显信号</Text>}
               </div>
@@ -273,7 +273,7 @@ export default function StockDetail() {
           <Card title={<Text strong style={{fontSize:14}}>核心财务指标</Text>} style={{ marginBottom: 14 }}>
             <Descriptions column={2} size="small" bordered colon={false}>
               <Descriptions.Item label="ROE(加权)">
-                <Text strong style={{color:ql.roe>=15?'#f04438':ql.roe>=10?'#f79009':'#667085'}}>{ql.roe?.toFixed(1)}%</Text>
+                <Text strong style={{color:ql.roe>=15?'#f04438':ql.roe>=10?'#f79009':'#94A3B8'}}>{ql.roe?.toFixed(1)}%</Text>
               </Descriptions.Item>
               <Descriptions.Item label="ROIC">
                 <Text strong>{ql.roic?.toFixed(1)}%</Text>

@@ -11,11 +11,11 @@ import {
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  long:        { label: '做多', color: '#52c41a', bg: '#f6ffed', icon: <ArrowUpOutlined/>, tip: '看多，可开多单' },
-  watch_long:  { label: '偏多', color: '#73d13d', bg: '#f6ffed', icon: '📈', tip: '偏强，等待入场' },
-  hold:        { label: '观望', color: '#8c8c8c', bg: '#fafafa', icon: '⏸️', tip: '方向不明' },
-  watch_short: { label: '偏空', color: '#ff7a45', bg: '#fff7e6', icon: '📉', tip: '偏弱，等待做空' },
-  short:       { label: '做空', color: '#f5222d', bg: '#fff1f0', icon: <ArrowDownOutlined/>, tip: '看空，可开空单' },
+  long:        { label: '做多', color: '#52c41a', bg: 'rgba(34,197,94,0.08)', icon: <ArrowUpOutlined/>, tip: '看多，可开多单' },
+  watch_long:  { label: '偏多', color: '#73d13d', bg: 'rgba(34,197,94,0.08)', icon: '📈', tip: '偏强，等待入场' },
+  hold:        { label: '观望', color: '#8c8c8c', bg: '#F1F5F9', icon: '⏸️', tip: '方向不明' },
+  watch_short: { label: '偏空', color: '#ff7a45', bg: 'rgba(249,115,22,0.08)', icon: '📉', tip: '偏弱，等待做空' },
+  short:       { label: '做空', color: '#f5222d', bg: 'rgba(239,68,68,0.08)', icon: <ArrowDownOutlined/>, tip: '看空，可开空单' },
 };
 
 const coinColor = {
@@ -147,7 +147,7 @@ export default function Crypto() {
           <div style={{ fontWeight: 700, fontSize: 16,
             color: v >= 65 ? '#52c41a' : v <= 35 ? '#f5222d' : '#8c8c8c' }}>{v}</div>
           <Progress percent={Math.max(0,v)} showInfo={false}
-            strokeColor={v >= 65 ? '#52c41a' : v <= 35 ? '#f5222d' : '#d9d9d9'}
+            strokeColor={v >= 65 ? '#52c41a' : v <= 35 ? '#f5222d' : '#F1F5F9'}
             size="small" style={{ width: 90, margin: '2px auto 0' }}/>
         </div>
       ),
@@ -230,7 +230,7 @@ export default function Crypto() {
       {/* 市场偏见 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: longCount > shortCount ? '#f6ffed' : (shortCount>longCount?'#fff1f0':'#fafafa') }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: longCount > shortCount ? 'rgba(34,197,94,0.06)' : (shortCount>longCount?'rgba(239,68,68,0.06)':'#FFFFFF') }}>
             <Statistic
               title="市场情绪"
               value={marketBias > 10 ? '偏多' : marketBias < -10 ? '偏空' : '中性'}
@@ -242,7 +242,7 @@ export default function Crypto() {
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'#f6ffed' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'rgba(34,197,94,0.06)' }}>
             <Statistic
               title="做多信号"
               value={longCount}
@@ -253,7 +253,7 @@ export default function Crypto() {
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'#fff1f0' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'rgba(239,68,68,0.06)' }}>
             <Statistic
               title="做空/回避信号"
               value={shortCount}
@@ -293,16 +293,14 @@ export default function Crypto() {
       </Card>
 
       {lastUpdate && (
-        <div style={{ textAlign:'right', marginTop:8, fontSize:11, color:'#999' }}>
+        <div style={{ textAlign:'right', marginTop:8, fontSize:11, color:'#94A3B8' }}>
           最后更新: {lastUpdate} · 数据来源: Binance
         </div>
       )}
 
       <style>{`
-        .row-long { background:#f6ffed44 !important; }
-        .row-long:hover td { background:#f6ffed99 !important; }
-        .row-short { background:#fff1f044 !important; }
-        .row-short:hover td { background:#fff1f099 !important; }
+        .row-long { background:rgba(34,197,94,0.06) !important; }
+        .row-short { background:rgba(239,68,68,0.06) !important; }
       `}</style>
     </div>
   );
