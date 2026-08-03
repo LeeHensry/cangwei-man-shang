@@ -3,7 +3,7 @@ import {
   Card, Typography, Row, Col, Button, Space, Form, Select, InputNumber, DatePicker,
   Table, Statistic, Tag, Spin, message, Progress, Divider,
 } from 'antd';
-import { PlayCircleOutlined, LineChartOutlined, TrophyOutlined, WarningOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, LineChartOutlined, TrophyOutlined, WarningOutlined, BarChartOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import dayjs from 'dayjs';
 
@@ -73,7 +73,7 @@ export default function Backtest() {
       <div><Text style={{fontSize:12}}>{r.sellDate}</Text><br/><Text type="secondary" style={{fontSize:11}}>¥{r.sellPrice}</Text></div>
     )},
     { title: '收益', align: 'right', width: 120, render: (_,r) => (
-      <Text style={{color:r.pnl>=0?'#f04438':'#12b76a',fontWeight:600,fontFamily:'Inter'}}>
+      <Text style={{color:r.pnl>=0?'var(--up)':'var(--down)',fontWeight:600,fontFamily:'var(--font-mono)'}}>
         {r.pnl>=0?'+':''}{r.pnl_pct}%
       </Text>
     )},
@@ -85,7 +85,7 @@ export default function Backtest() {
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0, fontWeight: 700 }}>📊 策略回测</Title>
+        <Title level={4} style={{ margin: 0, fontWeight: 700 }}><BarChartOutlined style={{color:'var(--accent)',marginRight:6}}/>策略回测</Title>
         <Text type="secondary" style={{ fontSize: 12 }}>基于历史数据验证价值策略表现（月度调仓+止损止盈）</Text>
       </div>
 
@@ -125,7 +125,7 @@ export default function Backtest() {
             <Col span={6}>
               <Card bodyStyle={{padding:'16px 20px'}}>
                 <Statistic title="总收益率" value={result.summary.total_return} suffix="%" precision={2}
-                  valueStyle={{fontSize:26,fontWeight:700,color:result.summary.total_return>=0?'#f04438':'#12b76a',fontFamily:'Inter'}}
+                  valueStyle={{fontSize:26,fontWeight:700,color:result.summary.total_return>=0?'var(--up)':'var(--down)',fontFamily:'var(--font-mono)'}}
                   prefix={result.summary.total_return>=0?'+':''} />
                 <div style={{marginTop:6}}>
                   <Text type="secondary" style={{fontSize:11}}>基准 {result.summary.benchmark_return>0?'+':''}{result.summary.benchmark_return.toFixed(1)}% </Text>
@@ -136,7 +136,7 @@ export default function Backtest() {
             <Col span={6}>
               <Card bodyStyle={{padding:'16px 20px'}}>
                 <Statistic title="年化收益率" value={result.summary.annual_return} suffix="%" precision={2}
-                  valueStyle={{fontSize:26,fontWeight:700,color:result.summary.annual_return>=0?'#f04438':'#12b76a',fontFamily:'Inter'}}
+                  valueStyle={{fontSize:26,fontWeight:700,color:result.summary.annual_return>=0?'var(--up)':'var(--down)',fontFamily:'var(--font-mono)'}}
                   prefix={result.summary.annual_return>=0?'+':''} />
                 <div style={{marginTop:6}}>
                   <Text type="secondary" style={{fontSize:11}}>回测周期 {result.summary.years}年</Text>
@@ -146,7 +146,7 @@ export default function Backtest() {
             <Col span={6}>
               <Card bodyStyle={{padding:'16px 20px'}}>
                 <Statistic title="最大回撤" value={result.summary.max_drawdown} suffix="%" precision={2}
-                  valueStyle={{fontSize:26,fontWeight:700,color:'#12b76a',fontFamily:'Inter'}} prefix="-" />
+                  valueStyle={{fontSize:26,fontWeight:700,color:'var(--down)',fontFamily:'var(--font-mono)'}} prefix="-" />
                 <div style={{marginTop:6}}>
                   <Text type="secondary" style={{fontSize:11}}><WarningOutlined /> 最大浮亏</Text>
                 </div>
@@ -155,10 +155,10 @@ export default function Backtest() {
             <Col span={6}>
               <Card bodyStyle={{padding:'16px 20px'}}>
                 <Statistic title="胜率" value={result.summary.win_rate} suffix="%" precision={1}
-                  valueStyle={{fontSize:26,fontWeight:700,fontFamily:'Inter',color:'#2e90fa'}} />
+                  valueStyle={{fontSize:26,fontWeight:700,fontFamily:'var(--font-mono)',color:'var(--accent)'}} />
                 <div style={{marginTop:6,display:'flex',justifyContent:'space-between',fontSize:11}}>
-                  <Text type="secondary">赢面 <Text style={{color:'#f04438',fontWeight:600}}>+{result.summary.avg_win.toFixed(1)}%</Text></Text>
-                  <Text type="secondary">亏 <Text style={{color:'#12b76a',fontWeight:600}}>{result.summary.avg_loss.toFixed(1)}%</Text></Text>
+                  <Text type="secondary">赢面 <Text style={{color:'var(--up)',fontWeight:600}}>+{result.summary.avg_win.toFixed(1)}%</Text></Text>
+                  <Text type="secondary">亏 <Text style={{color:'var(--down)',fontWeight:600}}>{result.summary.avg_loss.toFixed(1)}%</Text></Text>
                 </div>
               </Card>
             </Col>

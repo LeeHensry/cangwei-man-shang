@@ -6,44 +6,203 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import 'antd/dist/reset.css';
 
-// 全局样式
+// 全局样式覆盖
 const style = document.createElement('style');
 style.textContent = `
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
-  .nav-logo { height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-  .logo-icon { font-size: 24px; }
-  .logo-text { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-  .logo-sub { font-size: 10px; color: #98a2b3; font-family: 'Inter', monospace; letter-spacing: 2px; }
-  .signal-badge { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-  .signal-buy { background: #fef3f2; color: #f04438; }
-  .signal-momentum_buy { background: #f9f5ff; color: #9e77ed; }
-  .signal-watch { background: #fffaeb; color: #b54708; }
-  .signal-hold { background: #f0f9ff; color: #175cd3; }
-  .signal-sell { background: #ecfdf3; color: #027a48; }
-  .score-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 22px; border-radius: 6px; font-size: 12px; font-weight: 700; font-family: 'Inter', monospace; }
-  .score-high { background: #fef3f2; color: #f04438; }
-  .score-mid { background: #fffaeb; color: #b54708; }
-  .score-low { background: #f2f4f7; color: #667085; }
-  .mini-chart-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: box-shadow 0.2s; }
-  .ant-card { border-radius: 10px !important; }
-  .ant-card-head { border-bottom: 1px solid #f0f0f0 !important; min-height: 44px !important; }
-  .ant-card-head-title { padding: 10px 0 !important; font-size: 13px; }
-  table { font-size: 12px; }
-  .ant-table-thead > tr > th { background: #fafbfc !important; font-size: 11px !important; color: #475467 !important; font-weight: 600 !important; }
+  body { background: #FAFAFA !important; }
+
+  /* AntD 组件全局样式 */
+  .ant-layout-sider {
+    box-shadow: none !important;
+    border-right: 1px solid #E8E8ED !important;
+  }
+  .ant-layout-header {
+    background: rgba(255,255,255,0.85) !important;
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    box-shadow: 0 1px 0 #E8E8ED !important;
+    padding: 0 24px !important;
+    height: 56px !important;
+    line-height: 56px !important;
+  }
+  .ant-card {
+    border-radius: 14px !important;
+    border: 1px solid #E8E8ED !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
+    transition: box-shadow 200ms ease;
+  }
+  .ant-card-head {
+    border-bottom: 1px solid #F0F0F2 !important;
+    min-height: 48px !important;
+  }
+  .ant-card-head-title {
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    color: #1A1A1E !important;
+    padding: 12px 0 !important;
+  }
+  .ant-card-body { padding: 18px !important; }
+  .ant-statistic-title {
+    font-size: 11px !important;
+    color: #8E8E93 !important;
+    margin-bottom: 4px !important;
+    font-weight: 500 !important;
+  }
+  .ant-statistic-content {
+    font-size: 22px !important;
+    font-weight: 600 !important;
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace !important;
+    font-variant-numeric: tabular-nums;
+  }
+  .ant-table-thead > tr > th {
+    background: #FAFAFA !important;
+    font-weight: 600 !important;
+    color: #64748B !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #E8E8ED !important;
+    padding: 10px 12px !important;
+  }
+  .ant-table-tbody > tr > td {
+    border-bottom: 1px solid #F5F5F7 !important;
+    font-size: 13px !important;
+    padding: 10px 12px !important;
+  }
+  .ant-table-tbody > tr:hover > td { background: #F8FAFC !important; }
+  .ant-tag {
+    border-radius: 20px !important;
+    font-size: 11px !important;
+    line-height: 20px !important;
+    padding: 0 8px !important;
+    border: none !important;
+  }
+  .ant-progress-text { font-size: 11px !important; font-weight: 600 !important; }
   .ant-progress-bg { border-radius: 100px !important; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 3px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  .ant-progress-inner { border-radius: 100px !important; background: #F1F5F9 !important; }
+  .ant-divider { border-color: #F0F0F2 !important; margin: 16px 0 !important; }
+  .ant-descriptions-bordered .ant-descriptions-item-label {
+    background: #FAFAFA !important; font-weight: 500 !important; color: #64748B !important;
+    width: 30% !important; font-size: 12px !important;
+  }
+  .ant-descriptions-bordered .ant-descriptions-item-content { font-size: 13px !important; }
+
+  /* 浅色菜单 */
+  .ant-menu-light { background: transparent !important; border-right: none !important; }
+  .ant-menu-light .ant-menu-item {
+    margin: 2px 8px !important;
+    border-radius: 10px !important;
+    height: 38px !important;
+    line-height: 38px !important;
+    color: #64748B !important;
+    font-weight: 500 !important;
+    font-size: 13px !important;
+  }
+  .ant-menu-light .ant-menu-item:hover {
+    background: #F1F5F9 !important;
+    color: #1A1A1E !important;
+  }
+  .ant-menu-light .ant-menu-item-selected {
+    background: linear-gradient(135deg, #0052FF, #4D7CFF) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 8px rgba(0,82,255,0.2);
+  }
+  .ant-menu-light .ant-menu-item-selected .ant-menu-item-icon { color: #fff !important; }
+  .ant-layout-sider-trigger {
+    background: #fff !important;
+    border-right: none !important;
+    border-top: 1px solid #E8E8ED !important;
+    color: #8E8E93 !important;
+  }
+  .ant-layout-sider-trigger:hover { color: #0052FF !important; }
+
+  /* 按钮 */
+  .ant-btn {
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    font-size: 12px !important;
+    height: 32px !important;
+    padding: 0 16px !important;
+  }
+  .ant-btn-primary {
+    background: linear-gradient(135deg, #0052FF, #4D7CFF) !important;
+    border: none !important;
+    box-shadow: 0 2px 8px rgba(0,82,255,0.2) !important;
+  }
+  .ant-btn-primary:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(0,82,255,0.3) !important;
+  }
+  .ant-btn-default {
+    background: #fff !important;
+    border-color: #E8E8ED !important;
+    color: #1A1A1E !important;
+  }
+  .ant-btn-default:hover { border-color: #0052FF !important; color: #0052FF !important; }
+
+  /* 输入框 */
+  .ant-input, .ant-select-selector {
+    border-radius: 10px !important;
+    border-color: #E8E8ED !important;
+  }
+  .ant-input:focus, .ant-input-focused,
+  .ant-select-focused .ant-select-selector {
+    border-color: #0052FF !important;
+    box-shadow: 0 0 0 2px rgba(0,82,255,0.1) !important;
+  }
+
+  /* Tabs */
+  .ant-tabs-tab { font-size: 13px !important; font-weight: 500 !important; }
+  .ant-tabs-tab-active { font-weight: 600 !important; }
+  .ant-tabs-ink-bar { background: #0052FF !important; height: 2px !important; border-radius: 2px; }
+
+  /* LIVE Badge */
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #22C55E; display: inline-block;
+    animation: livePulse 2s ease-in-out infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34,197,94,0); }
+  }
+  .live-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 20px;
+    background: rgba(34,197,94,0.08);
+    font-size: 10px; color: #16A34A; font-weight: 600;
+    font-family: 'SF Mono', Menlo, monospace;
+    letter-spacing: 0.06em;
+  }
+
+  /* Skeleton */
+  .ant-skeleton-content .ant-skeleton-title,
+  .ant-skeleton-content .ant-skeleton-paragraph > li {
+    background: linear-gradient(90deg, #F0F0F2 25%, #F8F8FA 50%, #F0F0F2 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s ease-in-out infinite;
+    border-radius: 4px;
+  }
+  @keyframes skeletonShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Gauge */
+  .gauge-container { position: relative; text-align: center; }
+
+  /* Link hover */
+  a { color: #0052FF; text-decoration: none; transition: color 150ms; }
+  a:hover { color: #4D7CFF; }
 `;
 document.head.appendChild(style);
 
-// 版本检测：启动时和每隔5分钟检查版本，发现新版本自动刷新（避免用户停留在旧版）
-const APP_VERSION = 'v1.1.0';
+// 版本检测
+const APP_VERSION = 'v1.4.0';
 const lastVersion = localStorage.getItem('cwms_app_version');
 if (lastVersion && lastVersion !== APP_VERSION) {
   localStorage.setItem('cwms_app_version', APP_VERSION);
-  // 清掉旧版遗留的用户注册数据
   if (lastVersion < 'v1.1.0') {
     const toRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -71,11 +230,21 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <ConfigProvider locale={zhCN} theme={{
     token: {
-      colorPrimary: '#1677ff',
-      colorSuccess: '#52c41a',
-      colorWarning: '#faad14',
-      colorError: '#f5222d',
-      borderRadius: 6,
+      colorPrimary: '#0052FF',
+      colorSuccess: '#22C55E',
+      colorWarning: '#F59E0B',
+      colorError: '#EF4444',
+      colorInfo: '#0052FF',
+      borderRadius: 10,
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Helvetica Neue', sans-serif",
+      fontSize: 13,
+    },
+    components: {
+      Menu: { itemBg: 'transparent', itemSelectedBg: 'linear-gradient(135deg, #0052FF, #4D7CFF)', itemColor: '#64748B', itemSelectedColor: '#fff', itemHeight: 38, iconSize: 16 },
+      Card: { borderRadiusLG: 14 },
+      Table: { headerBg: '#FAFAFA', headerColor: '#64748B', rowHoverBg: '#F8FAFC' },
+      Button: { borderRadius: 10, controlHeight: 32 },
+      Tag: { borderRadiusSM: 20 },
     },
   }}>
     <BrowserRouter>

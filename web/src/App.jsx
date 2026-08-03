@@ -9,6 +9,8 @@ import {
   StarOutlined,
   HistoryOutlined,
   ControlOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider, UserBadge, useAuth } from './auth';
@@ -25,7 +27,36 @@ import Settings from './pages/Settings';
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-// 403 无权限提示页（access 用户访问策略配置时显示）
+// F1像素威士忌杯Logo
+function PixelLogo({ size = 36 }) {
+  const s = size / 38;
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" shapeRendering="crispEdges" style={{ flexShrink: 0 }}>
+      {/* 杯身轮廓 */}
+      <rect x="8" y="2" width={1} height={1} fill="#0F172A"/><rect x="23" y="2" width={1} height={1} fill="#0F172A"/>
+      <rect x="7" y="3" width={1} height={2} fill="#0F172A"/><rect x="24" y="3" width={1} height={2} fill="#0F172A"/>
+      <rect x="6" y="5" width={1} height={3} fill="#0F172A"/><rect x="25" y="5" width={1} height={3} fill="#0F172A"/>
+      <rect x="5" y="8" width={1} height={5} fill="#0F172A"/><rect x="26" y="8" width={1} height={5} fill="#0F172A"/>
+      <rect x="6" y="13" width={1} height={2} fill="#0F172A"/><rect x="25" y="13" width={1} height={2} fill="#0F172A"/>
+      <rect x="7" y="15" width={1} height={2} fill="#0F172A"/><rect x="24" y="15" width={1} height={2} fill="#0F172A"/>
+      <rect x="8" y="17" width={1} height={1} fill="#0F172A"/><rect x="23" y="17" width={1} height={1} fill="#0F172A"/>
+      <rect x="9" y="18" width={14} height={1} fill="#0F172A"/>
+      {/* 酒液 */}
+      <rect x="7" y="8" width={18} height={2} fill="#0052FF"/>
+      <rect x="6" y="10" width={20} height={3} fill="#0052FF"/>
+      <rect x="6" y="13" width={20} height={2} fill="#0052FF"/>
+      <rect x="7" y="15" width={18} height={2} fill="#0052FF"/>
+      <rect x="8" y="17" width={16} height={1} fill="#0052FF" opacity="0.7"/>
+      <rect x="9" y="18" width={14} height={1} fill="#4D7CFF" opacity="0.4"/>
+      {/* 杯柄 */}
+      <rect x="15" y="19" width={2} height={5} fill="#0F172A"/>
+      <rect x="11" y="24" width={10} height={1} fill="#0F172A"/>
+      <rect x="9" y="25" width={14} height={1} fill="#0F172A"/>
+    </svg>
+  );
+}
+
+// 403 无权限提示页
 function RequireAdmin({ children }) {
   const { user } = useAuth();
   if (!user) return null;
@@ -50,15 +81,6 @@ function AppShell() {
   const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  // 菜单配置：8个功能模块，icon 互不重复
-  // 市场总览    → DashboardOutlined  仪表盘
-  // 价值信号    → ThunderboltOutlined 闪电
-  // 短线机会    → RocketOutlined     火箭 🚀
-  // 加密货币    → WalletOutlined     钱包 💰
-  // 拥挤度雷达  → RadarChartOutlined 雷达图 📡
-  // 自选持仓    → StarOutlined       星星 ⭐
-  // 回测分析    → HistoryOutlined    历史/回溯
-  // 策略配置    → ControlOutlined    控制台（仅管理员可见）
   const allMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
@@ -70,7 +92,6 @@ function AppShell() {
     { key: '/settings', icon: <ControlOutlined />, label: '策略配置', adminOnly: true },
   ];
 
-  // 普通用户隐藏策略配置菜单
   const menuItems = allMenuItems.filter(item => !item.adminOnly || user?.role === 'admin');
 
   const getPageTitle = () => {
@@ -84,54 +105,101 @@ function AppShell() {
     return '';
   };
 
+  const currentTime = new Date();
+
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
+    <Layout style={{ minHeight: '100vh', background: '#FAFAFA' }}>
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
         width={220}
-        collapsedWidth={64}
-        style={{ background: '#0c111d', position: 'fixed', height: '100vh', zIndex: 100, overflow: 'auto' }}
+        collapsedWidth={60}
+        trigger={null}
+        style={{
+          background: '#fff',
+          position: 'fixed',
+          height: '100vh',
+          zIndex: 100,
+          overflow: 'hidden',
+          borderRight: '1px solid #E8E8ED',
+        }}
       >
-        <div className="nav-logo">
-          <div className="logo-icon">🥃</div>
-          {!collapsed && (
-            <div>
-              <div className="logo-text">仓位满上</div>
-              <div className="logo-sub">TOP UP</div>
-            </div>
-          )}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+          {/* Logo */}
+          <div className="nav-logo" style={collapsed ? { justifyContent: 'center', padding: '0 !important' } : undefined}>
+            <PixelLogo size={collapsed ? 30 : 34} />
+            {!collapsed && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1 }}>
+                <div className="logo-text">仓位满上</div>
+                <div className="logo-sub">TOP UP</div>
+              </div>
+            )}
+          </div>
+
+          {/* Menu */}
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: 6 }}>
+            <Menu
+              theme="light"
+              mode="inline"
+              selectedKeys={[location.pathname.startsWith('/stock') ? '/signals' : location.pathname]}
+              items={menuItems}
+              onClick={({ key }) => navigate(key)}
+              style={{ border: 'none' }}
+            />
+          </div>
+
+          {/* 底栏：版本号 + 折叠按钮 */}
+          <div
+            onClick={() => setCollapsed(!collapsed)}
+            style={{
+              height: 40,
+              borderTop: '1px solid #E8E8ED',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'space-between',
+              padding: collapsed ? 0 : '0 16px',
+              cursor: 'pointer',
+              color: '#8E8E93',
+              fontSize: 11,
+              flexShrink: 0,
+              transition: 'background 150ms',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#F5F5F7'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            {!collapsed && (
+              <span className="num-mono" style={{ color: '#AEAEB2', letterSpacing: '0.05em' }}>v1.4.0</span>
+            )}
+            {collapsed
+              ? <MenuUnfoldOutlined style={{ fontSize: 14 }} />
+              : <MenuFoldOutlined style={{ fontSize: 14 }} />
+            }
+          </div>
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[location.pathname.startsWith('/stock') ? '/signals' : location.pathname]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-          style={{ marginTop: 12, background: 'transparent', border: 'none' }}
-        />
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 64 : 220, transition: 'margin-left 0.2s' }}>
+
+      <Layout style={{ marginLeft: collapsed ? 60 : 220, transition: 'margin-left 0.2s ease' }}>
         <Header style={{
-          background: '#fff', padding: '0 28px', display: 'flex',
+          padding: '0 24px', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
           position: 'sticky', top: 0, zIndex: 99, height: 56,
         }}>
           <Space align="center" size={12}>
-            <Text strong style={{ fontSize: 16, color: '#101828', fontWeight: 600 }}>{getPageTitle()}</Text>
+            <Text strong style={{ fontSize: 15, color: '#1A1A1E', fontWeight: 600 }}>{getPageTitle()}</Text>
+            <span className="live-pill">
+              <span className="live-dot" style={{ width: 5, height: 5 }}/>
+              LIVE
+            </span>
           </Space>
-          <Space size={16}>
-            <Badge dot color="#52c41a">
-              <Text type="secondary" style={{ fontSize: 12 }}>实时数据</Text>
-            </Badge>
-            <Text type="secondary" style={{ fontSize: 13, fontFamily: 'Inter, monospace' }}>
-              {new Date().toLocaleDateString('zh-CN', { weekday: 'short', month: 'numeric', day: 'numeric' })}
+          <Space size={14}>
+            <Text type="secondary" style={{ fontSize: 12, color: '#8E8E93' }}>
+              {currentTime.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })}
             </Text>
             <UserBadge />
           </Space>
         </Header>
-        <Content style={{ padding: 24, minHeight: 'calc(100vh - 56px)' }}>
+        <Content style={{ padding: '20px 24px', minHeight: 'calc(100vh - 56px)' }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/signals" element={<Signals />} />
@@ -157,4 +225,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-// build Thu Jul 30 2026 - access key auth v1.1.0

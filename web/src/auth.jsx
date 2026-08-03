@@ -242,7 +242,27 @@ function LoginModal({ open, onLogin }) {
       width={400}
     >
       <div style={{ textAlign: 'center', padding: '20px 0 8px' }}>
-        <div style={{ fontSize: 42, marginBottom: 8 }}>🥃</div>
+        <div style={{display:'flex',justifyContent:'center',marginBottom:8}}>
+          <svg width="40" height="40" viewBox="0 0 32 32" shapeRendering="crispEdges">
+            <rect x="8" y="2" width="1" height="1" fill="#0F172A"/><rect x="23" y="2" width="1" height="1" fill="#0F172A"/>
+            <rect x="7" y="3" width="1" height="2" fill="#0F172A"/><rect x="24" y="3" width="1" height="2" fill="#0F172A"/>
+            <rect x="6" y="5" width="1" height="3" fill="#0F172A"/><rect x="25" y="5" width="1" height="3" fill="#0F172A"/>
+            <rect x="5" y="8" width="1" height="5" fill="#0F172A"/><rect x="26" y="8" width="1" height="5" fill="#0F172A"/>
+            <rect x="6" y="13" width="1" height="2" fill="#0F172A"/><rect x="25" y="13" width="1" height="2" fill="#0F172A"/>
+            <rect x="7" y="15" width="1" height="2" fill="#0F172A"/><rect x="24" y="15" width="1" height="2" fill="#0F172A"/>
+            <rect x="8" y="17" width="1" height="1" fill="#0F172A"/><rect x="23" y="17" width="1" height="1" fill="#0F172A"/>
+            <rect x="9" y="18" width="14" height="1" fill="#0F172A"/>
+            <rect x="7" y="8" width="18" height="2" fill="#0052FF"/>
+            <rect x="6" y="10" width="20" height="3" fill="#0052FF"/>
+            <rect x="6" y="13" width="20" height="2" fill="#0052FF"/>
+            <rect x="7" y="15" width="18" height="2" fill="#0052FF"/>
+            <rect x="8" y="17" width="16" height="1" fill="#0052FF" opacity="0.7"/>
+            <rect x="9" y="18" width="14" height="1" fill="#4D7CFF" opacity="0.4"/>
+            <rect x="15" y="19" width="2" height="5" fill="#0F172A"/>
+            <rect x="11" y="24" width="10" height="1" fill="#0F172A"/>
+            <rect x="9" y="25" width="14" height="1" fill="#0F172A"/>
+          </svg>
+        </div>
         <Title level={3} style={{ margin: 0 }}>仓位满上</Title>
         <Text type="secondary" style={{ fontSize: 13 }}>TopUp · A股智能决策助手</Text>
       </div>
@@ -255,11 +275,11 @@ function LoginModal({ open, onLogin }) {
           ]}
         >
           <Input
-            prefix={<KeyOutlined style={{ color: '#98a2b3' }} />}
+            prefix={<KeyOutlined style={{ color: '#8E8E93' }} />}
             placeholder="请输入您的 Access Key（8位）"
             size="large"
             autoFocus
-            style={{ fontFamily: 'monospace, ui-monospace', letterSpacing: 2 }}
+            style={{ fontFamily: 'var(--font-mono)', letterSpacing: 2 }}
             maxLength={8}
             onChange={(e) => {
               // 自动小写
@@ -294,9 +314,9 @@ export function UserBadge() {
   if (!user) return null;
 
   const isAdmin = user.role === 'admin';
-  const roleColor = isAdmin ? '#f79009' : '#1677ff';
+  const roleColor = isAdmin ? 'var(--warn)' : 'var(--accent)';
   const roleLabel = isAdmin ? '管理员' : '用户';
-  const avatarBg = isAdmin ? '#f79009' : '#1677ff';
+  const avatarBg = isAdmin ? 'var(--warn)' : 'var(--accent)';
 
   const startEdit = () => { setInputVal(user.username); setEditing(true); };
 
@@ -325,7 +345,7 @@ export function UserBadge() {
           <Button
             type="text"
             size="small"
-            icon={<CheckOutlined style={{ color: '#12b76a' }} />}
+            icon={<CheckOutlined style={{ color: 'var(--down)' }} />}
             onClick={commit}
           />
         </Space>
@@ -336,14 +356,14 @@ export function UserBadge() {
               {user.username?.[0] || '?'}
             </Avatar>
             <Text style={{ fontSize: 13 }}>{user.username}</Text>
-            <EditOutlined style={{ fontSize: 11, color: '#98a2b3' }} />
+            <EditOutlined style={{ fontSize: 11, color: '#8E8E93' }} />
           </Space>
         </Tooltip>
       )}
       <Tooltip title="退出登录">
         <LogoutOutlined
           onClick={logout}
-          style={{ fontSize: 14, color: '#98a2b3', cursor: 'pointer', marginLeft: 4 }}
+          style={{ fontSize: 14, color: '#8E8E93', cursor: 'pointer', marginLeft: 4 }}
         />
       </Tooltip>
     </Space>

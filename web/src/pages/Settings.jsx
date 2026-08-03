@@ -7,21 +7,21 @@ import {
 import {
   SettingOutlined, SaveOutlined, ReloadOutlined, DatabaseOutlined,
   CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, SyncOutlined,
-  GlobalOutlined, ApiOutlined,
+  GlobalOutlined, ApiOutlined, ControlOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
 const stageMeta = {
-  init:      { label: '初始化',   color: '#1677ff' },
-  list:      { label: '加载股票池', color: '#1677ff' },
-  quote:     { label: '拉取行情',   color: '#1677ff' },
-  kline:     { label: '同步K线',   color: '#722ed1' },
-  indicator: { label: '计算指标',   color: '#722ed1' },
-  score:     { label: '计算评分',   color: '#fa8c16' },
-  crowding:  { label: '计算拥挤度', color: '#fa8c16' },
-  done:      { label: '完成',     color: '#52c41a', icon: <CheckCircleOutlined /> },
-  error:     { label: '失败',     color: '#f5222d', icon: <CloseCircleOutlined /> },
+  init:      { label: '初始化',   color: 'var(--accent)' },
+  list:      { label: '加载股票池', color: 'var(--accent)' },
+  quote:     { label: '拉取行情',   color: 'var(--accent)' },
+  kline:     { label: '同步K线',   color: 'var(--purple)' },
+  indicator: { label: '计算指标',   color: 'var(--purple)' },
+  score:     { label: '计算评分',   color: 'var(--warn)' },
+  crowding:  { label: '计算拥挤度', color: 'var(--warn)' },
+  done:      { label: '完成',     color: 'var(--down)', icon: <CheckCircleOutlined /> },
+  error:     { label: '失败',     color: 'var(--up)', icon: <CloseCircleOutlined /> },
 };
 
 export default function Settings() {
@@ -166,12 +166,12 @@ export default function Settings() {
     } finally { setSaving(false); }
   };
 
-  const currentStageMeta = stageMeta[syncStage] || { label: '处理中', color: '#1677ff' };
+  const currentStageMeta = stageMeta[syncStage] || { label: '处理中', color: 'var(--accent)' };
 
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0, fontWeight: 700 }}>⚙️ 策略配置</Title>
+        <Title level={4} style={{ margin: 0, fontWeight: 700 }}><ControlOutlined style={{color:'var(--accent)',marginRight:6}}/>策略配置</Title>
         <Text type="secondary" style={{ fontSize: 12 }}>调整评分权重、信号阈值、同步设置</Text>
       </div>
 
@@ -236,7 +236,7 @@ export default function Settings() {
             title={<Space><DatabaseOutlined/>数据管理</Space>}
             extra={<Button type="primary" icon={syncing ? <LoadingOutlined /> : <ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing}>立即同步</Button>}
           >
-            <Descriptions column={1} size="small" labelStyle={{color:'#667085'}} contentStyle={{fontWeight:600}}>
+            <Descriptions column={1} size="small" labelStyle={{color:'#3A3A3C'}} contentStyle={{fontWeight:600}}>
               {dbStats ? (
                 <>
                   <Descriptions.Item label="股票数量">{dbStats.stocks} 只</Descriptions.Item>
@@ -267,7 +267,7 @@ export default function Settings() {
                 <Form layout="vertical" size="small">
                   <Form.Item label="当前数据源" style={{marginBottom:12}}>
                     <Select value={selectedDs} onChange={handleSwitchDs} style={{width:'100%'}}>
-                      <Select.Option value="auto">🤖 自动选择（按网络连通性）</Select.Option>
+                      <Select.Option value="auto">自动选择（按网络连通性）</Select.Option>
                       {Object.entries(dsStatus.sources).map(([k, s]) => (
                         <Select.Option key={k} value={k} disabled={!s.ok}>
                           <Space>
@@ -287,7 +287,7 @@ export default function Settings() {
                   {Object.entries(dsStatus.sources).map(([k, s]) => (
                     <div key={k} style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                       <Space size={6}>
-                        {s.ok ? <CheckCircleOutlined style={{color:'#52c41a'}}/> : <CloseCircleOutlined style={{color:'#f5222d'}}/>}
+                        {s.ok ? <CheckCircleOutlined style={{color:'var(--down)'}}/> : <CloseCircleOutlined style={{color:'var(--up)'}}/>}
                         <Text>{s.label}</Text>
                         <Text type="secondary">
                           ({s.regions?.map(r => r === 'domestic' ? '国内' : '海外').join('/')})
@@ -313,7 +313,7 @@ export default function Settings() {
           <Card title="关于仓位满上">
             <div style={{ lineHeight: 1.8, fontSize: 13 }}>
               <p><b>仓位满上 TopUp</b> - A股智能决策助手</p>
-              <p style={{color:'#667085'}}>以价值投资为核心策略，结合多因子评分模型、资金面分析、技术面择时、量化拥挤度，为个人投资者提供客观的交易参考。</p>
+              <p style={{color:'#3A3A3C'}}>以价值投资为核心策略，结合多因子评分模型、资金面分析、技术面择时、量化拥挤度，为个人投资者提供客观的交易参考。</p>
               <Divider style={{margin:'8px 0'}}/>
               <Space direction="vertical" size={4} style={{width:'100%'}}>
                 <div style={{display:'flex',justifyContent:'space-between'}}><Text type="secondary">版本</Text><Text>v1.1.1</Text></div>

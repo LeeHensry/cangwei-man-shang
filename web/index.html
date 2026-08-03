@@ -4,132 +4,135 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>仓位满上 TopUp</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    /* ===== CSS Variables ===== */
+    :root {
+      --bg: #FAFAFA;
+      --bg-sidebar: #FFFFFF;
+      --bg-elevated: #FFFFFF;
+      --bg-hover: #F5F5F7;
+      --bg-muted: #F8FAFC;
+      --border: #E8E8ED;
+      --border-strong: #D2D2D7;
+      --fg: #1A1A1E;
+      --fg-secondary: #3A3A3C;
+      --fg-muted: #8E8E93;
+      --fg-faint: #AEAEB2;
+      --accent: #0052FF;
+      --accent-secondary: #4D7CFF;
+      --accent-soft: rgba(0,82,255,0.06);
+      --accent-border: rgba(0,82,255,0.2);
+      --up: #EF4444;
+      --up-text: #DC2626;
+      --up-soft: rgba(239,68,68,0.08);
+      --down: #22C55E;
+      --down-text: #16A34A;
+      --down-soft: rgba(34,197,94,0.08);
+      --warn: #F59E0B;
+      --warn-text: #D97706;
+      --warn-soft: rgba(245,158,11,0.1);
+      --purple: #A855F7;
+      --purple-soft: rgba(168,85,247,0.08);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+      --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+      --shadow-accent: 0 4px 14px rgba(0,82,255,0.25);
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-family: var(--font-sans);
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
-      background: #f5f7fa;
-      color: #1a1a2e;
+      background: var(--bg);
+      color: var(--fg);
     }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 3px; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
     ::-webkit-scrollbar-track { background: transparent; }
 
-    /* Override AntD styles */
-    .ant-layout-sider { box-shadow: none !important; border-right: 1px solid #eaecf0 !important; }
-    .ant-layout-header {
-      background: #fff !important;
-      box-shadow: 0 1px 0 #eaecf0 !important;
-      padding: 0 28px !important;
-      height: 56px !important;
-      line-height: 56px !important;
+    /* ===== Sidebar ===== */
+    .nav-logo {
+      padding: 0 18px !important;
+      display: flex; align-items: center; gap: 10px;
+      height: 56px; border-bottom: 1px solid var(--border) !important;
     }
-    .ant-card {
-      border-radius: 12px !important;
-      border: 1px solid #eaecf0 !important;
-      box-shadow: 0 1px 2px rgba(16,24,40,0.04) !important;
+    .logo-icon {
+      width: 34px !important; height: 34px !important;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
-    .ant-card-head { border-bottom: 1px solid #f0f1f3 !important; min-height: 52px !important; }
-    .ant-card-head-title { font-weight: 600 !important; font-size: 14px !important; color: #101828 !important; padding: 14px 0 !important; }
-    .ant-card-body { padding: 20px !important; }
-    .ant-statistic-title { font-size: 12px !important; color: #667085 !important; margin-bottom: 6px !important; }
-    .ant-statistic-content { font-size: 22px !important; font-weight: 600 !important; font-family: 'Inter', monospace !important; }
-    .ant-table-thead > tr > th {
-      background: #f9fafb !important;
-      font-weight: 500 !important;
-      color: #475467 !important;
-      font-size: 12px !important;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      border-bottom: 1px solid #eaecf0 !important;
+    .logo-text {
+      font-size: 15px !important; font-weight: 700 !important;
+      color: var(--fg) !important; letter-spacing: -0.01em; line-height: 1.2;
     }
-    .ant-table-tbody > tr > td {
-      border-bottom: 1px solid #f5f5f5 !important;
-      font-size: 13px !important;
+    .logo-sub {
+      font-size: 10px !important; color: var(--fg-faint) !important;
+      font-family: var(--font-mono) !important; letter-spacing: 1.5px;
+      font-weight: 500; margin-top: 2px !important;
     }
-    .ant-table-tbody > tr:hover > td { background: #f8fafc !important; }
-    .ant-tag { border-radius: 6px !important; font-size: 12px !important; line-height: 20px !important; margin: 0 !important; }
-    .ant-progress-text { font-size: 11px !important; font-weight: 500 !important; }
-    .ant-progress-bg { border-radius: 100px !important; }
-    .ant-progress-inner { border-radius: 100px !important; background: #f2f4f7 !important; }
-    .ant-divider { border-color: #f0f1f3 !important; margin: 16px 0 !important; }
-    .ant-descriptions-bordered .ant-descriptions-item-label {
-      background: #fafbfc !important; font-weight: 500 !important; color: #475467 !important;
-      width: 30% !important; font-size: 12px !important;
-    }
-    .ant-descriptions-bordered .ant-descriptions-item-content { font-size: 13px !important; }
-    .ant-menu-dark { background: #0c111d !important; }
-    .ant-menu-dark .ant-menu-item-selected { background: #1677ff !important; }
-    .ant-layout-sider-trigger { background: #0c111d !important; border-right: none !important; }
 
-    .up { color: #f04438 !important; }
-    .down { color: #12b76a !important; }
+    /* ===== Signal Badges ===== */
+    .signal-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .signal-buy { background: var(--up-soft); color: var(--up-text); }
+    .signal-momentum_buy { background: var(--purple-soft); color: #9333EA; }
+    .signal-watch { background: var(--warn-soft); color: var(--warn-text); }
+    .signal-hold { background: var(--accent-soft); color: var(--accent); }
+    .signal-sell { background: var(--down-soft); color: var(--down-text); }
 
+    /* ===== Score Badge ===== */
+    .score-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 24px; border-radius: 7px;
+      font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .score-high { background: var(--up-soft); color: var(--up-text); }
+    .score-mid { background: var(--warn-soft); color: var(--warn-text); }
+    .score-low { background: var(--bg-hover); color: var(--fg-muted); }
+
+    /* ===== Cards ===== */
+    .mini-chart-card {
+      transition: transform 200ms ease, box-shadow 200ms ease;
+      cursor: default;
+    }
+    .mini-chart-card:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-lg) !important;
+    }
     .card-gradient {
-      background: linear-gradient(135deg, #1677ff 0%, #69b1ff 100%) !important;
-      border: none !important;
-      color: #fff;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%) !important;
+      border: none !important; color: #fff;
     }
     .card-gradient .ant-card-head-title { color: #fff !important; }
     .card-gradient .ant-statistic-title { color: rgba(255,255,255,0.75) !important; }
     .card-gradient .ant-statistic-content { color: #fff !important; }
 
-    .mini-chart-card {
-      transition: all 0.2s ease;
-    }
-    .mini-chart-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(16,24,40,0.08) !important;
+    /* ===== Utility ===== */
+    .up { color: var(--up) !important; }
+    .down { color: var(--down) !important; }
+    .num-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+    /* ===== Focus Ring ===== */
+    a:focus-visible, button:focus-visible, .ant-btn:focus-visible,
+    .ant-input:focus-visible, .ant-select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
 
-    .gauge-container { position: relative; text-align: center; }
-    .score-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      font-weight: 700;
-      font-size: 13px;
-      font-family: 'Inter', monospace;
+    /* ===== Transitions ===== */
+    .ant-btn, .ant-tag, .ant-menu-item, .ant-table-tbody > tr {
+      transition: all 150ms ease-out !important;
     }
-    .score-high { background: #fef3f2; color: #f04438; }
-    .score-mid { background: #fffaeb; color: #f79009; }
-    .score-low { background: #f0f9ff; color: #2e90fa; }
-
-    .signal-badge {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 3px 10px; border-radius: 20px;
-      font-size: 12px; font-weight: 500;
-    }
-    .signal-buy { background: #fef3f2; color: #f04438; }
-    .signal-watch { background: #fffaeb; color: #b54708; }
-    .signal-hold { background: #f0f9ff; color: #175cd3; }
-    .signal-sell { background: #ecfdf3; color: #027a48; }
-
-    .nav-logo {
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      height: 56px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .nav-logo .logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #f04438, #f79009);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-    }
-    .nav-logo .logo-text { color: #fff; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
-    .nav-logo .logo-sub { color: rgba(255,255,255,0.45); font-size: 10px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; margin-top: -2px; }
   </style>
 </head>
 <body>

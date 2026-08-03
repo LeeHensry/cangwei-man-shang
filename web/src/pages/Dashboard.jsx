@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   ReloadOutlined, FireOutlined, RiseOutlined, InfoCircleOutlined, ArrowUpOutlined, ArrowDownOutlined,
-  FundViewOutlined, WarningOutlined, RocketOutlined,
+  FundViewOutlined, WarningOutlined, RocketOutlined, CheckCircleOutlined, FallOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
@@ -13,29 +13,29 @@ import { getOverview, triggerSync } from '../api';
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  buy: { label: '买入', color: '#f04438', bg: '#fef3f2', icon: '🟢' },
-  watch: { label: '关注', color: '#b54708', bg: '#fffaeb', icon: '🟡' },
-  hold: { label: '持有', color: '#175cd3', bg: '#f0f9ff', icon: '⏸' },
-  sell: { label: '减仓', color: '#027a48', bg: '#ecfdf3', icon: '↓' },
-  momentum_buy: { label: '动量搭车', color: '#9e77ed', bg: '#f9f5ff', icon: '🟣' },
+  buy: { label: '买入', color: 'var(--up)', bg: 'var(--up-soft)', icon: '' },
+  watch: { label: '关注', color: 'var(--warn)', bg: 'var(--warn-soft)', icon: '' },
+  hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)', icon: '' },
+  sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)', icon: '' },
+  momentum_buy: { label: '动量搭车', color: 'var(--purple)', bg: 'var(--purple-soft)', icon: '' },
 };
 
 const crowdingLevelMeta = {
-  extreme: { label: '极端危险', color: '#d92d20' },
-  crowded: { label: '拥挤预警', color: '#f04438' },
-  hot: { label: '火热', color: '#f79009' },
-  warm: { label: '动量搭车', color: '#9e77ed' },
-  cold: { label: '冷清', color: '#12b76a' },
+  extreme: { label: '极端危险', color: 'var(--up)' },
+  crowded: { label: '拥挤预警', color: 'var(--up)' },
+  hot: { label: '火热', color: 'var(--warn)' },
+  warm: { label: '动量搭车', color: 'var(--purple)' },
+  cold: { label: '冷清', color: 'var(--down)' },
 };
 
 function IndexCard({ item }) {
   const isUp = item.pct_chg >= 0;
-  const color = isUp ? '#f04438' : '#12b76a';
+  const color = isUp ? 'var(--up)' : 'var(--down)';
   return (
     <Card className="mini-chart-card" bodyStyle={{ padding: '12px 14px' }} style={{ height: '100%' }}>
       <Text type="secondary" style={{ fontSize: 11, fontWeight: 500, display: 'block', marginBottom: 4 }}>{item.name}</Text>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 18, fontWeight: 700, color: '#101828', fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 18, fontWeight: 700, color: '#1A1A1E', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
           {item.close?.toFixed(item.close > 1000 ? 0 : item.close > 100 ? 1 : 2)}
         </span>
         <span style={{ fontSize: 12, fontWeight: 600, color, whiteSpace: 'nowrap' }}>
@@ -48,8 +48,8 @@ function IndexCard({ item }) {
 
 function MiniBar({ label, score, color }) {
   return (
-    <div style={{ flex: 1, textAlign: 'center' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{score}</div>
+      <div style={{ flex: 1, textAlign: 'center' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{score}</div>
       <Text type="secondary" style={{ fontSize: 10 }}>{label}</Text>
       <Progress percent={score} showInfo={false} strokeColor={color} size="small" style={{ marginTop: 2 }} />
     </div>
@@ -122,7 +122,7 @@ export default function Dashboard() {
     }],
   };
 
-  const pctColor = (v) => v === null || v === undefined ? '#98a2b3' : v >= 0 ? '#f04438' : '#12b76a';
+  const pctColor = (v) => v === null || v === undefined ? '#8E8E93' : v >= 0 ? 'var(--up)' : 'var(--down)';
   const formatPct = (v) => v === null || v === undefined ? '-' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 
   const topCols = [
@@ -130,35 +130,35 @@ export default function Dashboard() {
       <span style={{
         width: 20, height: 20, borderRadius: 5, display: 'inline-flex',
         alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700,
-        background: i < 3 ? '#fef3f2' : i < 6 ? '#fffaeb' : '#f2f4f7',
-        color: i < 3 ? '#f04438' : i < 6 ? '#b54708' : '#667085',
+        background: i < 3 ? 'var(--up-soft)' : i < 6 ? 'var(--warn-soft)' : '#f2f4f7',
+        color: i < 3 ? 'var(--up)' : i < 6 ? 'var(--warn)' : '#3A3A3C',
       }}>{i+1}</span>
     )},
     { title: '股票', dataIndex: 'name', render: (v, r) => (
       <div>
-        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828', whiteSpace: 'nowrap' }}>{v}</a>
-        <div style={{ fontSize: 10, color: '#98a2b3', fontFamily: 'Inter' }}>{r.code}</div>
+        <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#1A1A1E', whiteSpace: 'nowrap' }}>{v}</a>
+        <div style={{ fontSize: 10, color: '#8E8E93', fontFamily: 'var(--font-mono)' }}>{r.code}</div>
       </div>
     )},
     { title: '现价', dataIndex: 'close', align: 'right', width: 72,
-      render: (v, r) => <Text style={{ fontWeight: 600, fontSize: 13, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums', color: pctColor(r.pct_chg) }}>{v?.toFixed(2)}</Text>
+      render: (v, r) => <Text style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', color: pctColor(r.pct_chg) }}>{v?.toFixed(2)}</Text>
     },
     { title: '今日', dataIndex: 'pct_chg', align: 'right', width: 68,
-      render: v => <Text style={{ fontWeight: 600, fontSize: 12, fontFamily: 'Inter', color: pctColor(v) }}>{formatPct(v)}</Text>,
+      render: v => <Text style={{ fontWeight: 600, fontSize: 12, fontFamily: 'var(--font-mono)', color: pctColor(v) }}>{formatPct(v)}</Text>,
       sorter: (a,b) => (a.pct_chg||0) - (b.pct_chg||0),
     },
     { title: '7日', dataIndex: 'pct_7d', align: 'right', width: 68,
-      render: v => <Text style={{ fontWeight: 600, fontSize: 12, fontFamily: 'Inter', color: pctColor(v) }}>{formatPct(v)}</Text>,
+      render: v => <Text style={{ fontWeight: 600, fontSize: 12, fontFamily: 'var(--font-mono)', color: pctColor(v) }}>{formatPct(v)}</Text>,
       sorter: (a,b) => (a.pct_7d||0) - (b.pct_7d||0),
     },
     { title: 'PE', dataIndex: 'pe', align: 'right', width: 54,
-      render: v => <Text type="secondary" style={{ fontSize: 12, fontFamily: 'Inter' }}>{v?.toFixed(1)}x</Text> },
+      render: v => <Text type="secondary" style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{v?.toFixed(1)}x</Text> },
     { title: '综合分', dataIndex: 'total_score', width: 120, align: 'center',
       sorter: (a,b)=>a.total_score-b.total_score, defaultSortOrder: 'descend',
       render: v => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Progress percent={v} size="small" showInfo={false}
-            strokeColor={v >= 75 ? '#f04438' : v >= 65 ? '#f79009' : '#2e90fa'}
+            strokeColor={v >= 75 ? 'var(--up)' : v >= 65 ? 'var(--warn)' : 'var(--accent)'}
             style={{ flex: 1 }}
           />
           <span className={'score-badge ' + (v>=70?'score-high':v>=60?'score-mid':'score-low')}>{v}</span>
@@ -167,15 +167,15 @@ export default function Dashboard() {
     },
     { title: '分项', align: 'center', width: 90, render: (_, r) => (
       <Space size={3}>
-        <Tooltip title="质量"><span style={{ fontSize: 11, color: '#12b76a', fontWeight: 600 }}>{r.quality}</span></Tooltip>
+        <Tooltip title="质量"><span style={{ fontSize: 11, color: 'var(--down)', fontWeight: 600 }}>{r.quality}</span></Tooltip>
         <Text type="secondary" style={{ fontSize: 9 }}>·</Text>
-        <Tooltip title="估值"><span style={{ fontSize: 11, color: '#f04438', fontWeight: 600 }}>{r.valuation}</span></Tooltip>
+        <Tooltip title="估值"><span style={{ fontSize: 11, color: 'var(--up)', fontWeight: 600 }}>{r.valuation}</span></Tooltip>
         <Text type="secondary" style={{ fontSize: 9 }}>·</Text>
-        <Tooltip title="技术+资金"><span style={{ fontSize: 11, color: '#2e90fa', fontWeight: 600 }}>{r.technical}</span></Tooltip>
+        <Tooltip title="技术+资金"><span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{r.technical}</span></Tooltip>
       </Space>
     )},
     { title: '信号', dataIndex: 'signal', width: 84, align: 'center',
-      render: s => <span className={'signal-badge signal-'+s} style={{whiteSpace:'nowrap'}}>{signalMeta[s]?.icon} {signalMeta[s]?.label}</span>
+      render: s => <span className={'signal-badge signal-'+s} style={{whiteSpace:'nowrap'}}>{signalMeta[s]?.label}</span>
     },
   ];
 
@@ -186,7 +186,7 @@ export default function Dashboard() {
       {/* 标题行 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>🥃 今日市场</Title>
+          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>今日市场</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>{data.date} · {data.total_stocks}只股票 · 收盘数据</Text>
         </div>
         <Button icon={<ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing} type="primary" ghost size="middle">
@@ -203,13 +203,13 @@ export default function Dashboard() {
                 size="small"
                 title={
                   <Space size={6}>
-                    <WarningOutlined style={{color:'#d92d20'}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:'#d92d20'}}>⚠️ 拥挤度预警</span>
+                    <WarningOutlined style={{color:'var(--up)'}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:'var(--up)'}}>拥挤度预警</span>
                     <Tag color="red" style={{margin:0}}>{data.crowding.stock_warnings.length}只</Tag>
                   </Space>
                 }
                 extra={<a onClick={() => navigate('/crowding')} style={{fontSize:12}}>详情 →</a>}
-                style={{borderColor:'#f04438'}}
+                style={{borderColor:'var(--up)'}}
                 bodyStyle={{padding:'8px 12px',maxHeight:120,overflowY:'auto'}}
               >
                 <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
@@ -217,7 +217,7 @@ export default function Dashboard() {
                     <Tag
                       key={s.code}
                       onClick={() => navigate('/stock/'+s.code)}
-                      style={{cursor:'pointer',background:'#fff1f0',borderColor:'#ffccc7',color:'#cf1322',fontSize:11,margin:0}}
+                      style={{cursor:'pointer',background:'var(--up-soft)',borderColor:'#ffccc7',color:'#cf1322',fontSize:11,margin:0}}
                     >
                       {s.name} <span style={{opacity:0.7}}>{s.combined_crowding_score}°</span>
                       {s.ret_5d > 10 && <FireOutlined style={{marginLeft:2}}/>}
@@ -233,8 +233,8 @@ export default function Dashboard() {
                 size="small"
                 title={
                   <Space size={6}>
-                    <RocketOutlined style={{color:'#9e77ed'}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:'#9e77ed'}}>🟣 动量搭车</span>
+                    <RocketOutlined style={{color:'var(--purple)'}}/>
+                    <span style={{fontSize:12,fontWeight:600,color:'var(--purple)'}}>动量搭车</span>
                     <Tag color="purple" style={{margin:0}}>{data.crowding.momentum_candidates.length}只</Tag>
                   </Space>
                 }
@@ -246,7 +246,7 @@ export default function Dashboard() {
                     <Tag
                       key={s.code}
                       onClick={() => navigate('/stock/'+s.code)}
-                      style={{cursor:'pointer',background:'#f9f5ff',borderColor:'#e9d5ff',color:'#7e22ce',fontSize:11,margin:0}}
+                      style={{cursor:'pointer',background:'var(--purple-soft)',borderColor:'#e9d5ff',color:'#7e22ce',fontSize:11,margin:0}}
                     >
                       {s.name} <span style={{opacity:0.7}}>{s.total_score}分</span>
                     </Tag>
@@ -270,7 +270,7 @@ export default function Dashboard() {
           <Card
             title={
               <Space size={6}>
-                <FundViewOutlined style={{color:'#f79009'}}/>
+                <FundViewOutlined style={{color:'var(--warn)'}}/>
                 <span style={{fontSize:13,fontWeight:600}}>市场温度</span>
                 <Tag style={{
                   fontSize:10, padding:'0 6px', borderRadius:10, lineHeight:'16px',
@@ -283,12 +283,12 @@ export default function Dashboard() {
                 <div style={{maxWidth:260,fontSize:12,lineHeight:1.7}}>
                   <div style={{fontWeight:600,marginBottom:4}}>四维加权评分：</div>
                   <div>估值30% · 资金35% · 趋势20% · 情绪15%</div>
-                  <div style={{marginTop:4,color:'#98a2b3'}}>
+                  <div style={{marginTop:4,color:'#8E8E93'}}>
                     资金面看两市成交额+行业资金集中度，
                     趋势看指数均线位置，情绪看当日涨跌比
                   </div>
                 </div>
-              }><InfoCircleOutlined style={{color:'#98a2b3',fontSize:13}}/></Tooltip>
+              }><InfoCircleOutlined style={{color:'#8E8E93',fontSize:13}}/></Tooltip>
             }
             bodyStyle={{ padding: '0 14px 10px' }}
             style={{ height: '100%' }}
@@ -297,11 +297,11 @@ export default function Dashboard() {
               <ReactECharts option={tempOption} style={{ width: 160, height: 140 }} />
               <div style={{ flex: 1, paddingLeft: 4 }}>
                 <div style={{ marginBottom: 6, textAlign:'center' }}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>全市场成交 <Text strong style={{fontSize:15,color:'#101828',fontFamily:'Inter',margin:'0 2px'}}>{amountWanYi}</Text>万亿</Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>全市场成交 <Text strong style={{fontSize:15,color:'#1A1A1E',fontFamily:'var(--font-mono)',margin:'0 2px'}}>{amountWanYi}</Text>万亿</Text>
                 </div>
                 <Tag style={{
                   display:'block',textAlign:'center',fontSize:12,fontWeight:600,padding:'4px 0',borderRadius:16,
-                  background:'#eff8ff',color:'#175cd3',border:'none',marginBottom:10,
+                  background:'var(--accent-soft)',color:'var(--accent)',border:'none',marginBottom:10,
                 }}>建议仓位 {t.suggested_position}</Tag>
               </div>
             </div>
@@ -322,9 +322,9 @@ export default function Dashboard() {
                 const pct = Math.round(count/signalTotal*100);
                 return (
                   <Col span={key==='momentum_buy'?5:key==='watch'?4:5} key={key}>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: meta.color, fontFamily: 'Inter', lineHeight: 1 }}>{count}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: meta.color, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{count}</div>
                     <div className={'signal-badge signal-'+key} style={{ margin: '6px auto 2px', fontSize: 10 }}>
-                      {meta.icon} {meta.label}
+                      {meta.label}
                     </div>
                     <Text type="secondary" style={{ fontSize: 10 }}>{pct}%</Text>
                   </Col>
@@ -334,22 +334,22 @@ export default function Dashboard() {
             <Divider style={{ margin: '12px 0 8px' }} />
             {/* 资金流向 */}
             <div>
-              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>🔥 行业资金方向</Text>
+              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><FireOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>行业资金方向</Text>
               <div style={{ marginTop: 6 }}>
                 {(t.top_flow_sectors||[]).slice(0,3).map((s,i) => (
                   <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 3 }}>
                     <Text>{s.name}</Text>
-                    <Text style={{color:'#f04438',fontFamily:'Inter',fontWeight:600}}>+{s.net_inflow}亿</Text>
+                    <Text style={{color:'var(--up)',fontFamily:'var(--font-mono)',fontWeight:600}}>+{s.net_inflow}亿</Text>
                   </div>
                 ))}
                 {(t.top_flow_sectors||[]).length === 0 && (
                   <Text type="secondary" style={{fontSize:11}}>今日全市场净流出，无净流入行业</Text>
                 )}
-                <div style={{marginTop:4,borderTop:'1px dashed #f0f0f0',paddingTop:4}}>
+                <div style={{marginTop:4,borderTop:'1px dashed #E8E8ED',paddingTop:4}}>
                   {(t.worst_flow_sectors||[]).slice(0,2).map((s,i) => (
                     <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize: 12, marginBottom: 2 }}>
                       <Text type="secondary">{s.name}</Text>
-                      <Text style={{color:'#12b76a',fontFamily:'Inter',fontWeight:600}}>{s.net_inflow}亿</Text>
+                      <Text style={{color:'var(--down)',fontFamily:'var(--font-mono)',fontWeight:600}}>{s.net_inflow}亿</Text>
                     </div>
                   ))}
                 </div>
@@ -370,7 +370,7 @@ export default function Dashboard() {
       <Card
         title={
           <Space size={8}>
-            <FireOutlined style={{ color: '#f04438' }}/>
+            <FireOutlined style={{ color: 'var(--up)' }}/>
             <span style={{ fontSize: 14, fontWeight: 600 }}>TOP 10 推荐</span>
             <Tag color="red" style={{ margin: 0 }}>{data.top_stocks.length}只</Tag>
           </Space>

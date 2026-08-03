@@ -13,10 +13,10 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  buy:    { label: '短线买入', color: '#f5222d', bg: '#fff1f0', icon: <RocketOutlined/> },
-  watch:  { label: '关注',     color: '#fa8c16', bg: '#fff7e6', icon: <ThunderboltOutlined/> },
-  sell:   { label: '回避',     color: '#52c41a', bg: '#f6ffed', icon: <ArrowDownOutlined/> },
-  hold:   { label: '中性',     color: '#8c8c8c', bg: '#fafafa', icon: null },
+  buy:    { label: '短线买入', color: 'var(--up)', bg: 'var(--up-soft)', icon: <RocketOutlined/> },
+  watch:  { label: '关注',     color: 'var(--warn)', bg: 'var(--warn-soft)', icon: <ThunderboltOutlined/> },
+  sell:   { label: '回避',     color: 'var(--down)', bg: 'var(--down-soft)', icon: <ArrowDownOutlined/> },
+  hold:   { label: '中性',     color: '#8c8c8c', bg: '#FAFAFA', icon: null },
 };
 
 export default function ShortTerm() {
@@ -74,7 +74,7 @@ export default function ShortTerm() {
       width: 80,
       align: 'right',
       render: v => (
-        <span style={{ color: v >= 0 ? '#f5222d' : '#52c41a', fontWeight: 600 }}>
+        <span style={{ color: v >= 0 ? 'var(--up)' : 'var(--down)', fontWeight: 600 }}>
           {v >= 0 ? '+' : ''}{v?.toFixed(2)}%
         </span>
       ),
@@ -88,9 +88,9 @@ export default function ShortTerm() {
       render: (v) => (
         <div>
           <div style={{ fontWeight: 700, fontSize: 16,
-            color: v >= 75 ? '#f5222d' : v >= 65 ? '#fa8c16' : '#8c8c8c' }}>{v}</div>
+            color: v >= 75 ? 'var(--up)' : v >= 65 ? 'var(--warn)' : '#8c8c8c' }}>{v}</div>
           <Progress percent={v} showInfo={false} strokeColor={
-            v >= 75 ? '#f5222d' : v >= 65 ? '#fa8c16' : '#d9d9d9'
+            v >= 75 ? 'var(--up)' : v >= 65 ? 'var(--warn)' : '#d9d9d9'
           } size="small" style={{ width: 80, margin: '2px auto 0' }}/>
         </div>
       ),
@@ -131,7 +131,7 @@ export default function ShortTerm() {
             <Tag key={i} color="blue" style={{ margin:0, fontSize:11 }}>{rs}</Tag>
           ))}
           {(r.risks||[]).slice(0,2).map((rs, i) => (
-            <Tag key={'r'+i} color="red" style={{ margin:0, fontSize:11 }}>⚠️ {rs}</Tag>
+            <Tag key={'r'+i} color="red" style={{ margin:0, fontSize:11 }}><WarningOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>{rs}</Tag>
           ))}
         </Space>
       ),
@@ -154,7 +154,7 @@ export default function ShortTerm() {
       <div style={{ marginBottom: 16, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
         <div>
           <Title level={4} style={{ margin: 0, fontWeight: 700 }}>
-            ⚡ 短线机会
+            <ThunderboltOutlined style={{color:'var(--accent)',marginRight:6}}/>短线机会
             <Tag color="geekblue" style={{ marginLeft: 8, fontWeight: 'normal' }}>
               {date || dayjs().format('YYYY-MM-DD')}
             </Tag>
@@ -179,12 +179,12 @@ export default function ShortTerm() {
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: buyCount > 0 ? '#fff1f0' : '#fafafa' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: buyCount > 0 ? 'var(--up-soft)' : '#FAFAFA' }}>
             <Statistic
               title={<span style={{ fontSize:12 }}><RocketOutlined /> 短线买入</span>}
               value={buyCount}
               suffix="只"
-              valueStyle={{ color: '#f5222d', fontSize: 28, fontWeight: 700 }}
+              valueStyle={{ color: 'var(--up)', fontSize: 28, fontWeight: 700 }}
             />
           </Card>
         </Col>
@@ -194,17 +194,17 @@ export default function ShortTerm() {
               title={<span style={{ fontSize:12 }}><ThunderboltOutlined /> 关注</span>}
               value={watchCount}
               suffix="只"
-              valueStyle={{ color: '#fa8c16', fontSize: 28, fontWeight: 700 }}
+              valueStyle={{ color: 'var(--warn)', fontSize: 28, fontWeight: 700 }}
             />
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: sellCount > 0 ? '#f6ffed' : '#fafafa' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: sellCount > 0 ? 'var(--down-soft)' : '#FAFAFA' }}>
             <Statistic
               title={<span style={{ fontSize:12 }}><WarningOutlined /> 回避信号</span>}
               value={sellCount}
               suffix="只"
-              valueStyle={{ color: '#52c41a', fontSize: 28, fontWeight: 700 }}
+              valueStyle={{ color: 'var(--down)', fontSize: 28, fontWeight: 700 }}
             />
           </Card>
         </Col>

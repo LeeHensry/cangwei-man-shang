@@ -3,18 +3,18 @@ import {
   Table, Tag, Select, Space, Card, Progress, Typography, Radio, Spin, Input,
   Tooltip, Segmented,
 } from 'antd';
-import { SearchOutlined, FilterFilled } from '@ant-design/icons';
+import { SearchOutlined, FilterFilled, RocketOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { getStocks, getIndustries } from '../api';
 
 const { Text } = Typography;
 
 const signalMeta = {
-  buy: { label: '买入', color: '#f04438', bg: '#fef3f2', icon: '🟢' },
-  momentum_buy: { label: '动量', color: '#9e77ed', bg: '#f9f5ff', icon: '🟣' },
-  watch: { label: '关注', color: '#b54708', bg: '#fffaeb', icon: '🟡' },
-  hold: { label: '持有', color: '#175cd3', bg: '#f0f9ff', icon: '⏸' },
-  sell: { label: '减仓', color: '#027a48', bg: '#ecfdf3', icon: '↓' },
+  buy: { label: '买入', color: 'var(--up)', bg: 'var(--up-soft)', icon: '' },
+  momentum_buy: { label: '动量', color: 'var(--purple)', bg: 'var(--purple-soft)', icon: '' },
+  watch: { label: '关注', color: 'var(--warn)', bg: 'var(--warn-soft)', icon: '' },
+  hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)', icon: '' },
+  sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)', icon: '' },
 };
 
 export default function Signals() {
@@ -55,16 +55,16 @@ export default function Signals() {
       render: (v, r) => (
         <Space size={6} align="start">
           <div style={{ display: 'flex', gap: 4, flexShrink: 0, paddingTop: 2 }}>
-            {r.is_new_economy && <Tooltip title="新经济"><span style={{fontSize:12}}>🚀</span></Tooltip>}
-            {r.is_oldman && <Tooltip title="传统行业/低成长"><span style={{fontSize:12}}>👴</span></Tooltip>}
+            {r.is_new_economy && <Tooltip title="新经济"><RocketOutlined style={{fontSize:12,color:'var(--purple)'}}/></Tooltip>}
+            {r.is_oldman && null}
           </div>
           <div>
-            <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#101828' }}>{v}</a>
+            <a onClick={() => navigate('/stock/' + r.code)} style={{ fontWeight: 600, fontSize: 13, color: '#1A1A1E' }}>{v}</a>
             <div>
-              <Text type="secondary" style={{ fontSize: 11, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{r.code}</Text>
+              <Text type="secondary" style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{r.code}</Text>
               {r.current_price && (
-                <Text style={{ fontSize: 11, marginLeft: 8, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums',
-                  color: r.current_price > 0 ? '#f04438' : '#12b76a', fontWeight: 500 }}>
+                <Text style={{ fontSize: 11, marginLeft: 8, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                  color: r.current_price > 0 ? 'var(--up)' : 'var(--down)', fontWeight: 500 }}>
                   ¥{r.current_price.toFixed(2)}
                 </Text>
               )}
@@ -74,15 +74,15 @@ export default function Signals() {
       )
     },
     { title: 'PE', dataIndex: 'pe', width: 70, align: 'right',
-      render: v => v ? <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{v.toFixed(1)}x</Text> : '-' },
+      render: v => v ? <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{v.toFixed(1)}x</Text> : '-' },
     { title: '市值(亿)', dataIndex: 'total_mv', width: 90, align: 'right', sorter: true,
-      render: v => v ? <Text style={{ fontFamily: 'Inter', fontSize: 12, color: '#475467', fontVariantNumeric: 'tabular-nums' }}>{v >= 10000 ? (v/10000).toFixed(1)+'万' : v.toLocaleString()}</Text> : '-' },
+      render: v => v ? <Text style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: '#3A3A3C', fontVariantNumeric: 'tabular-nums' }}>{v >= 10000 ? (v/10000).toFixed(1)+'万' : v.toLocaleString()}</Text> : '-' },
     { title: '综合分', dataIndex: 'total_score', width: 140, sorter: true,
       render: v => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Progress
             percent={v} size="small" showInfo={false}
-            strokeColor={v >= 70 ? '#f04438' : v >= 60 ? '#f79009' : v >= 50 ? '#2e90fa' : '#d0d5dd'}
+            strokeColor={v >= 70 ? 'var(--up)' : v >= 60 ? 'var(--warn)' : v >= 50 ? 'var(--accent)' : '#E8E8ED'}
             style={{ flex: 1 }}
           />
           {scoreBadge(v)}
@@ -90,23 +90,23 @@ export default function Signals() {
       )
     },
     { title: <Tooltip title="盈利能力+成长+健康+稳定">质量</Tooltip>, dataIndex: 'quality_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#12b76a' : v >= 45 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--down)' : v >= 45 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
     { title: <Tooltip title="PE估值+价格位置">估值</Tooltip>, dataIndex: 'valuation_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#f04438' : v >= 40 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--up)' : v >= 40 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
     { title: <Tooltip title="均线/MACD/RSI/量能">技术</Tooltip>, dataIndex: 'technical_score', width: 60, align: 'center', sorter: true,
-      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? '#2e90fa' : v >= 45 ? '#f79009' : '#98a2b3' }}>{v}</Text> },
+      render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--accent)' : v >= 45 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
     { title: '行业', dataIndex: 'industry', width: 120, ellipsis: true,
       render: v => <Text type="secondary" style={{ fontSize: 12 }}>{v || '-'}</Text> },
     { title: '信号', dataIndex: 'signal', width: 90, align: 'center', fixed: 'right',
-      render: s => <span className={'signal-badge signal-'+s}>{signalMeta[s]?.icon} {signalMeta[s]?.label}</span>
+      render: s => <span className={'signal-badge signal-'+s}>{signalMeta[s]?.label}</span>
     },
     { title: '拥挤度', dataIndex: 'crowding_score', width: 70, align: 'center', sorter: true,
       render: (v, r) => {
         if (v === null || v === undefined) return <Text type="secondary" style={{fontSize:12}}>-</Text>;
-        const color = v >= 85 ? '#d92d20' : v >= 70 ? '#f04438' : v >= 55 ? '#f79009' : v >= 30 ? '#9e77ed' : '#12b76a';
+        const color = v >= 85 ? 'var(--up)' : v >= 70 ? 'var(--up)' : v >= 55 ? 'var(--warn)' : v >= 30 ? 'var(--purple)' : 'var(--down)';
         return (
           <Tooltip title={`拥挤度等级: ${r.crowding_level || 'normal'}`}>
-            <span style={{color, fontWeight:700, fontSize:12, fontFamily:'Inter'}}>{Math.round(v)}</span>
+            <span style={{color, fontWeight:700, fontSize:12, fontFamily:'var(--font-mono)'}}>{Math.round(v)}</span>
           </Tooltip>
         );
       }
@@ -123,11 +123,11 @@ export default function Signals() {
               onChange={v => setParams(p => ({ ...p, signal: v==='all'?'':v, page: 1 }))}
               options={[
                 { label: '全部', value: 'all' },
-                { label: '🟢 买入', value: 'buy' },
-                { label: '🟣 动量搭车', value: 'momentum_buy' },
-                { label: '🟡 关注', value: 'watch' },
-                { label: '⚪ 持有', value: 'hold' },
-                { label: '🔴 减仓', value: 'sell' },
+                { label: '买入', value: 'buy' },
+                { label: '动量搭车', value: 'momentum_buy' },
+                { label: '关注', value: 'watch' },
+                { label: '持有', value: 'hold' },
+                { label: '减仓', value: 'sell' },
               ]}
             />
             <Segmented
@@ -135,8 +135,8 @@ export default function Signals() {
               onChange={v => setParams(p => ({ ...p, economyFilter: v==='all'?'':v, page:1 }))}
               options={[
                 { label: '全部类型', value: 'all' },
-                { label: '🚀 新经济', value: 'true' },
-                { label: '👴 传统', value: 'false' },
+                { label: <span><RocketOutlined style={{color:'var(--purple)',fontSize:11}}/> 新经济</span>, value: 'true' },
+                { label: '传统', value: 'false' },
               ]}
             />
             <Select
@@ -158,7 +158,7 @@ export default function Signals() {
               ]}
             />
             <Input
-              placeholder="搜索名称或代码" prefix={<SearchOutlined style={{color:'#98a2b3'}}/>}
+              placeholder="搜索名称或代码" prefix={<SearchOutlined style={{color:'#8E8E93'}}/>}
               style={{ width: 160 }} allowClear size="middle"
               value={search} onChange={e => setSearch(e.target.value)}
             />

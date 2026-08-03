@@ -5,17 +5,17 @@ import {
 } from 'antd';
 import {
   DollarCircleOutlined, RocketOutlined, ArrowDownOutlined, ArrowUpOutlined,
-  ReloadOutlined, WarningOutlined, ThunderboltOutlined,
+  ReloadOutlined, WarningOutlined, ThunderboltOutlined, RiseOutlined, FallOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  long:        { label: '做多', color: '#52c41a', bg: '#f6ffed', icon: <ArrowUpOutlined/>, tip: '看多，可开多单' },
-  watch_long:  { label: '偏多', color: '#73d13d', bg: '#f6ffed', icon: '📈', tip: '偏强，等待入场' },
-  hold:        { label: '观望', color: '#8c8c8c', bg: '#fafafa', icon: '⏸️', tip: '方向不明' },
-  watch_short: { label: '偏空', color: '#ff7a45', bg: '#fff7e6', icon: '📉', tip: '偏弱，等待做空' },
-  short:       { label: '做空', color: '#f5222d', bg: '#fff1f0', icon: <ArrowDownOutlined/>, tip: '看空，可开空单' },
+  long:        { label: '做多', color: 'var(--down)', bg: 'var(--down-soft)', icon: <ArrowUpOutlined/>, tip: '看多，可开多单' },
+  watch_long:  { label: '偏多', color: '#73d13d', bg: 'var(--down-soft)', icon: <RiseOutlined style={{fontSize:12}}/>, tip: '偏强，等待入场' },
+  hold:        { label: '观望', color: '#8c8c8c', bg: '#FAFAFA', icon: null, tip: '方向不明' },
+  watch_short: { label: '偏空', color: '#ff7a45', bg: 'var(--warn-soft)', icon: <FallOutlined style={{fontSize:12}}/>, tip: '偏弱，等待做空' },
+  short:       { label: '做空', color: 'var(--up)', bg: 'var(--up-soft)', icon: <ArrowDownOutlined/>, tip: '看空，可开空单' },
 };
 
 const coinColor = {
@@ -96,7 +96,7 @@ export default function Crypto() {
         <Space>
           <div style={{
             width:28,height:28,borderRadius:'50%',
-            background: coinColor[r.symbol] || '#1677ff',
+            background: coinColor[r.symbol] || 'var(--accent)',
             color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',
             fontSize:12,fontWeight:700,
           }}>
@@ -122,7 +122,7 @@ export default function Crypto() {
       width: 100,
       align: 'right',
       render: v => (
-        <span style={{ color: v>=0 ? '#52c41a' : '#f5222d', fontWeight: 600 }}>
+        <span style={{ color: v>=0 ? 'var(--down)' : 'var(--up)', fontWeight: 600 }}>
           {v>=0?'+':''}{v?.toFixed(2)}%
         </span>
       ),
@@ -145,9 +145,9 @@ export default function Crypto() {
       render: v => (
         <div>
           <div style={{ fontWeight: 700, fontSize: 16,
-            color: v >= 65 ? '#52c41a' : v <= 35 ? '#f5222d' : '#8c8c8c' }}>{v}</div>
+            color: v >= 65 ? 'var(--down)' : v <= 35 ? 'var(--up)' : '#8c8c8c' }}>{v}</div>
           <Progress percent={Math.max(0,v)} showInfo={false}
-            strokeColor={v >= 65 ? '#52c41a' : v <= 35 ? '#f5222d' : '#d9d9d9'}
+            strokeColor={v >= 65 ? 'var(--down)' : v <= 35 ? 'var(--up)' : '#d9d9d9'}
             size="small" style={{ width: 90, margin: '2px auto 0' }}/>
         </div>
       ),
@@ -183,7 +183,7 @@ export default function Crypto() {
             <Tag key={i} color="green" style={{margin:0,fontSize:11}}>{rs}</Tag>
           ))}
           {(r.risks||[]).slice(0,2).map((rs,i)=>(
-            <Tag key={'r'+i} color="red" style={{margin:0,fontSize:11}}>⚠️{rs}</Tag>
+            <Tag key={'r'+i} color="red" style={{margin:0,fontSize:11}}><WarningOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>{rs}</Tag>
           ))}
         </Space>
       ),
@@ -230,36 +230,36 @@ export default function Crypto() {
       {/* 市场偏见 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background: longCount > shortCount ? '#f6ffed' : (shortCount>longCount?'#fff1f0':'#fafafa') }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background: longCount > shortCount ? 'var(--down-soft)' : (shortCount>longCount?'var(--up-soft)':'#FAFAFA') }}>
             <Statistic
               title="市场情绪"
               value={marketBias > 10 ? '偏多' : marketBias < -10 ? '偏空' : '中性'}
               valueStyle={{
-                color: marketBias > 10 ? '#52c41a' : marketBias < -10 ? '#f5222d' : '#8c8c8c',
+                color: marketBias > 10 ? 'var(--down)' : marketBias < -10 ? 'var(--up)' : '#8c8c8c',
                 fontSize: 24, fontWeight: 700 }}
               suffix={<span style={{fontSize:14}}>({marketBias>=0?'+':''}{marketBias})</span>}
             />
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'#f6ffed' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'var(--down-soft)' }}>
             <Statistic
               title="做多信号"
               value={longCount}
               suffix="个"
-              prefix={<RocketOutlined style={{color:'#52c41a'}}/>}
-              valueStyle={{ color:'#52c41a', fontSize:28, fontWeight:700 }}
+              prefix={<RocketOutlined style={{color:'var(--down)'}}/>}
+              valueStyle={{ color:'var(--down)', fontSize:28, fontWeight:700 }}
             />
           </Card>
         </Col>
         <Col span={8}>
-          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'#fff1f0' }}>
+          <Card size="small" bodyStyle={{ padding: '16px 20px', background:'var(--up-soft)' }}>
             <Statistic
               title="做空/回避信号"
               value={shortCount}
               suffix="个"
-              prefix={<WarningOutlined style={{color:'#f5222d'}}/>}
-              valueStyle={{ color:'#f5222d', fontSize:28, fontWeight:700 }}
+              prefix={<WarningOutlined style={{color:'var(--up)'}}/>}
+              valueStyle={{ color:'var(--up)', fontSize:28, fontWeight:700 }}
             />
           </Card>
         </Col>

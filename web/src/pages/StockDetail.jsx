@@ -4,17 +4,17 @@ import {
   Spin, Space, Statistic, Divider, Segmented, Tooltip,
 } from 'antd';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, RocketOutlined, RiseOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { getStockDetail } from '../api';
 
 const { Title, Text } = Typography;
 
 const signalMeta = {
-  buy: { color: '#f04438', label: '🟢 买入建议', bg: '#fef3f2' },
-  watch: { color: '#b54708', label: '🟡 建议关注', bg: '#fffaeb' },
-  hold: { color: '#175cd3', label: '⚪ 继续持有', bg: '#f0f9ff' },
-  sell: { color: '#027a48', label: '🔴 建议减仓', bg: '#ecfdf3' },
+  buy: { color: 'var(--up)', label: '买入建议', bg: 'var(--up-soft)' },
+  watch: { color: 'var(--warn)', label: '建议关注', bg: 'var(--warn-soft)' },
+  hold: { color: 'var(--accent)', label: '继续持有', bg: 'var(--accent-soft)' },
+  sell: { color: 'var(--down)', label: '建议减仓', bg: 'var(--down-soft)' },
 };
 
 function ScoreRing({ value, color, size = 80, label }) {
@@ -26,8 +26,8 @@ function ScoreRing({ value, color, size = 80, label }) {
       axisLine: { lineStyle: { width: 8, color: [[1,'#f2f4f7']], roundCap: true } },
       pointer: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
       title: { show: false },
-      detail: { valueAnimation: true, fontSize: 22, fontWeight: 700, color: '#101828', offsetCenter: [0,0],
-        formatter: () => value, fontFamily: 'Inter' },
+      detail: { valueAnimation: true, fontSize: 22, fontWeight: 700, color: '#1A1A1E', offsetCenter: [0,0],
+        formatter: () => value, fontFamily: 'var(--font-mono)' },
       data: [{ value }],
     }],
     graphic: [{
@@ -134,7 +134,7 @@ export default function StockDetail() {
 
   return (
     <div>
-      <a onClick={() => navigate(-1)} style={{ marginBottom: 16, display: 'inline-block', fontSize: 13, color: '#667085' }}>
+      <a onClick={() => navigate(-1)} style={{ marginBottom: 16, display: 'inline-block', fontSize: 13, color: '#3A3A3C' }}>
         <ArrowLeftOutlined /> 返回
       </a>
 
@@ -144,18 +144,18 @@ export default function StockDetail() {
           <Col flex="auto">
             <Space align="baseline" size={12}>
               <Title level={3} style={{ margin: 0, fontWeight: 700 }}>{data.name}</Title>
-              <Text type="secondary" style={{ fontSize: 15, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{code}</Text>
+              <Text type="secondary" style={{ fontSize: 15, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{code}</Text>
               <Tag color={data.is_new_economy?'volcano':data.is_oldman?'default':'blue'}
                 style={{ borderRadius: 20, margin:0, padding: '2px 10px', fontSize: 11 }}>
-                {data.is_new_economy?'🚀 新经济':data.is_oldman?'👴 传统':data.industry}
+                {data.is_new_economy?<span><RocketOutlined style={{color:'var(--purple)',fontSize:11}}/> 新经济</span>:data.is_oldman?'传统':data.industry}
               </Tag>
               {data.total_mv && <Text type="secondary" style={{fontSize:12}}>市值 {data.total_mv.toLocaleString()}亿</Text>}
             </Space>
             <Space align="baseline" style={{ marginTop: 12 }} size={16}>
-              <span style={{ fontSize: 36, fontWeight: 700, color: isUp?'#f04438':'#12b76a', fontFamily:'Inter', fontVariantNumeric:'tabular-nums', lineHeight: 1 }}>
+              <span style={{ fontSize: 36, fontWeight: 700, color: isUp?'var(--up)':'var(--down)', fontFamily:'var(--font-mono)', fontVariantNumeric:'tabular-nums', lineHeight: 1 }}>
                 {curPrice?.toFixed(2)}
               </span>
-              <span style={{ fontSize: 16, fontWeight: 600, color: isUp?'#f04438':'#12b76a', display:'inline-flex',alignItems:'center',gap:4 }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: isUp?'var(--up)':'var(--down)', display:'inline-flex',alignItems:'center',gap:4 }}>
                 {isUp?'▲':'▼'} {isUp?'+':''}{changePct?.toFixed(2)}%
               </span>
             </Space>
@@ -166,29 +166,29 @@ export default function StockDetail() {
                 background: signalMeta[s.signal].bg, borderRadius: 14, padding: '14px 22px', textAlign: 'center',
               }}>
                 <div style={{ fontSize: 13, color: signalMeta[s.signal].color, fontWeight: 600 }}>{signalMeta[s.signal].label}</div>
-                <div style={{ fontSize: 36, fontWeight: 700, color: signalMeta[s.signal].color, fontFamily: 'Inter', lineHeight: 1.2 }}>{s.total}</div>
-                <div style={{ fontSize: 11, color: '#98a2b3' }}>综合评分</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: signalMeta[s.signal].color, fontFamily: 'var(--font-mono)', lineHeight: 1.2 }}>{s.total}</div>
+                <div style={{ fontSize: 11, color: '#8E8E93' }}>综合评分</div>
               </div>
             </Col>
           )}
         </Row>
 
         {s.signal === 'buy' && (
-          <div style={{ marginTop: 20, padding: '16px 20px', background: '#fef3f2', borderRadius: 10, border: '1px solid #fee4e2' }}>
+          <div style={{ marginTop: 20, padding: '16px 20px', background: 'var(--up-soft)', borderRadius: 10, border: '1px solid #fee4e2' }}>
             <Row gutter={24}>
               <Col span={6}>
-                <Statistic title="💡 建议仓位" value={s.position_pct||10} suffix="%" valueStyle={{ fontSize: 22, fontWeight:700, color:'#f04438' }} />
+                <Statistic title="建议仓位" value={s.position_pct||10} suffix="%" valueStyle={{ fontSize: 22, fontWeight:700, color:'var(--up)' }} />
               </Col>
               <Col span={6}>
-                <Statistic title="🎯 目标价" value={s.target_price} prefix="¥" valueStyle={{ fontSize: 22, fontWeight:700, color:'#f04438' }} />
+                <Statistic title="目标价" value={s.target_price} prefix="¥" valueStyle={{ fontSize: 22, fontWeight:700, color:'var(--up)' }} />
               </Col>
               <Col span={6}>
-                <Statistic title="🛑 止损价" value={s.stop_loss} prefix="¥" valueStyle={{ fontSize: 22, fontWeight:700, color:'#12b76a' }} />
+                <Statistic title="止损价" value={s.stop_loss} prefix="¥" valueStyle={{ fontSize: 22, fontWeight:700, color:'var(--down)' }} />
               </Col>
               <Col span={6}>
-                <Statistic title="📈 潜在空间"
+                <Statistic title={<><RiseOutlined style={{fontSize:12}}/> 潜在空间</>}
                   value={s.target_price && curPrice ? ((s.target_price/curPrice-1)*100).toFixed(1) : '-'} suffix="%"
-                  valueStyle={{ fontSize: 22, fontWeight:700, color:'#f04438' }} />
+                  valueStyle={{ fontSize: 22, fontWeight:700, color:'var(--up)' }} />
               </Col>
             </Row>
           </div>
@@ -199,15 +199,15 @@ export default function StockDetail() {
       <Row gutter={14} style={{ marginBottom: 14 }}>
         <Col span={8}>
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
-            <ScoreRing value={s.quality} color="#12b76a" label="质量" size={90} />
+            <ScoreRing value={s.quality} color="var(--down)" label="质量" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>质量评分</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1E', marginBottom: 8 }}>质量评分</div>
               <Space direction="vertical" size={2} style={{ width: '100%' }}>
                 {[['盈利',qd.profit,30],['成长',qd.growth,25],['健康',qd.health,25],['稳定',qd.extra,20]].map(([name,v,max])=>(
                   <div key={name} style={{display:'flex',alignItems:'center',gap:8}}>
-                    <Text style={{fontSize:11,color:'#667085',width:32}}>{name}</Text>
-                    <Progress percent={Math.round(v/max*100)} showInfo={false} strokeColor="#12b76a" size="small" style={{flex:1}} />
-                    <Text style={{fontSize:11,fontFamily:'Inter',width:20,textAlign:'right',color:'#475467'}}>{v}</Text>
+                    <Text style={{fontSize:11,color:'#3A3A3C',width:32}}>{name}</Text>
+                    <Progress percent={Math.round(v/max*100)} showInfo={false} strokeColor="var(--down)" size="small" style={{flex:1}} />
+                    <Text style={{fontSize:11,fontFamily:'var(--font-mono)',width:20,textAlign:'right',color:'#3A3A3C'}}>{v}</Text>
                   </div>
                 ))}
               </Space>
@@ -216,10 +216,10 @@ export default function StockDetail() {
         </Col>
         <Col span={8}>
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
-            <ScoreRing value={s.valuation} color="#f04438" label="估值" size={90} />
+            <ScoreRing value={s.valuation} color="var(--up)" label="估值" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>估值水平</div>
-              <Descriptions column={1} size="small" colon={false} labelStyle={{width:'auto',fontSize:12,color:'#667085',padding:'2px 0'}} contentStyle={{fontSize:12,padding:'2px 0',fontFamily:'Inter',textAlign:'right'}}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1E', marginBottom: 8 }}>估值水平</div>
+              <Descriptions column={1} size="small" colon={false} labelStyle={{width:'auto',fontSize:12,color:'#3A3A3C',padding:'2px 0'}} contentStyle={{fontSize:12,padding:'2px 0',fontFamily:'var(--font-mono)',textAlign:'right'}}>
                 <Descriptions.Item label="PE(TTM)"><Text strong>{vd.current_pe}x</Text></Descriptions.Item>
                 <Descriptions.Item label="价格位置"><Text strong>{vd.price_percentile}%</Text></Descriptions.Item>
                 <Descriptions.Item label={vd.price_percentile<30?'判断':'判断'}>
@@ -233,13 +233,13 @@ export default function StockDetail() {
         </Col>
         <Col span={8}>
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
-            <ScoreRing value={s.technical} color="#2e90fa" label="技术" size={90} />
+            <ScoreRing value={s.technical} color="var(--accent)" label="技术" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#101828', marginBottom: 8 }}>技术面</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1E', marginBottom: 8 }}>技术面</div>
               <div style={{fontSize:12}}>
                 {(td.signals||[]).slice(0,5).map((sig,i)=>{
                   const isPos = sig.includes('+');
-                  return <Tag key={i} color={isPos?'blue':'red'} style={{margin:'0 4px 4px 0',fontSize:11,borderRadius:6,background:isPos?'#eff8ff':'#fef3f2',borderColor:isPos?'#d1e9ff':'#fecdca',color:isPos?'#175cd3':'#b42318'}}>{sig.replace('+','↑').replace('-','↓')}</Tag>;
+                  return <Tag key={i} color={isPos?'blue':'red'} style={{margin:'0 4px 4px 0',fontSize:11,borderRadius:6,background:isPos?'var(--accent-soft)':'var(--up-soft)',borderColor:isPos?'#d1e9ff':'#fecdca',color:isPos?'var(--accent)':'#b42318'}}>{sig.replace('+','↑').replace('-','↓')}</Tag>;
                 })}
                 {(!td.signals||td.signals.length===0) && <Text type="secondary">暂无明显信号</Text>}
               </div>
@@ -273,7 +273,7 @@ export default function StockDetail() {
           <Card title={<Text strong style={{fontSize:14}}>核心财务指标</Text>} style={{ marginBottom: 14 }}>
             <Descriptions column={2} size="small" bordered colon={false}>
               <Descriptions.Item label="ROE(加权)">
-                <Text strong style={{color:ql.roe>=15?'#f04438':ql.roe>=10?'#f79009':'#667085'}}>{ql.roe?.toFixed(1)}%</Text>
+                <Text strong style={{color:ql.roe>=15?'var(--up)':ql.roe>=10?'var(--warn)':'#3A3A3C'}}>{ql.roe?.toFixed(1)}%</Text>
               </Descriptions.Item>
               <Descriptions.Item label="ROIC">
                 <Text strong>{ql.roic?.toFixed(1)}%</Text>
@@ -296,18 +296,18 @@ export default function StockDetail() {
             { title:'报告期',dataIndex:'report_date',width:90,render:v=>(
               <span style={{fontSize:12}}>{v.substring(0,4)}-{v.substring(4,6)} <Text type="secondary">{v.includes('1231')?'年报':v.includes('0630')?'中报':v.includes('0331')?'Q1':'Q3'}</Text></span>
             )},
-            { title:'ROE%',dataIndex:'roe',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(1)}</Text>},
-            { title:'毛利率%',dataIndex:'gross_margin',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(1)}</Text>},
-            { title:'净利率%',dataIndex:'net_margin',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(1)}</Text>},
-            { title:'营收(亿)',dataIndex:'revenue',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(0)}</Text>},
+            { title:'ROE%',dataIndex:'roe',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(1)}</Text>},
+            { title:'毛利率%',dataIndex:'gross_margin',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(1)}</Text>},
+            { title:'净利率%',dataIndex:'net_margin',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(1)}</Text>},
+            { title:'营收(亿)',dataIndex:'revenue',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(0)}</Text>},
             { title:'营收YoY',dataIndex:'revenue_yoy',align:'right',render:v=>(
-              <Text style={{color:v>=0?'#f04438':'#12b76a',fontFamily:'Inter',fontSize:12,fontWeight:500}}>{v>=0?'+':''}{v?.toFixed(1)}%</Text>
+              <Text style={{color:v>=0?'var(--up)':'var(--down)',fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500}}>{v>=0?'+':''}{v?.toFixed(1)}%</Text>
             )},
-            { title:'净利(亿)',dataIndex:'net_profit',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(1)}</Text>},
+            { title:'净利(亿)',dataIndex:'net_profit',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(1)}</Text>},
             { title:'净利YoY',dataIndex:'net_profit_yoy',align:'right',render:v=>(
-              <Text style={{color:v>=0?'#f04438':'#12b76a',fontFamily:'Inter',fontSize:12,fontWeight:500}}>{v>=0?'+':''}{v?.toFixed(1)}%</Text>
+              <Text style={{color:v>=0?'var(--up)':'var(--down)',fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500}}>{v>=0?'+':''}{v?.toFixed(1)}%</Text>
             )},
-            { title:'负债率%',dataIndex:'debt_ratio',align:'right',render:v=><Text style={{fontFamily:'Inter',fontSize:12}}>{v?.toFixed(0)}</Text>},
+            { title:'负债率%',dataIndex:'debt_ratio',align:'right',render:v=><Text style={{fontFamily:'var(--font-mono)',fontSize:12}}>{v?.toFixed(0)}</Text>},
           ]}
         />
       </Card>

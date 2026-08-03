@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, RiseOutlined, FallOutlined,
-  WarningOutlined, CheckCircleOutlined, FundViewOutlined, CloudDownloadOutlined,
+  WarningOutlined, CheckCircleOutlined, FundViewOutlined, CloudDownloadOutlined, WalletOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -52,17 +52,17 @@ async function restoreFromBackup() {
 
 
 const signalMeta = {
-  buy: { label: '买入', color: '#f04438', bg: '#fef3f2' },
-  watch: { label: '关注', color: '#b54708', bg: '#fffaeb' },
-  hold: { label: '持有', color: '#175cd3', bg: '#f0f9ff' },
-  sell: { label: '减仓', color: '#027a48', bg: '#ecfdf3' },
+  buy: { label: '买入', color: 'var(--up)', bg: 'var(--up-soft)' },
+  watch: { label: '关注', color: 'var(--warn)', bg: 'var(--warn-soft)' },
+  hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)' },
+  sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)' },
 };
 
 function PnLText({ value, suffix = '%', colored = true }) {
   if (value === null || value === undefined || isNaN(value)) return <Text type="secondary">--</Text>;
-  const color = value >= 0 ? '#f04438' : '#12b76a';
+  const color = value >= 0 ? 'var(--up)' : 'var(--down)';
   const sign = value >= 0 ? '+' : '';
-  return <Text style={{ color: colored ? color : '#344054', fontWeight: 600, fontFamily: 'Inter', fontVariantNumeric: 'tabular-nums' }}>{sign}{value.toFixed(2)}{suffix}</Text>;
+  return <Text style={{ color: colored ? color : '#3A3A3C', fontWeight: 600, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{sign}{value.toFixed(2)}{suffix}</Text>;
 }
 
 export default function Holdings() {
@@ -131,13 +131,13 @@ export default function Holdings() {
     { title: '股票', render: (_, r) => (
       <div>
         <a onClick={() => navigate('/stock/'+r.code)} style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</a>
-        <div style={{ fontSize: 11, color: '#98a2b3', fontFamily: 'Inter' }}>{r.code}</div>
+        <div style={{ fontSize: 11, color: '#8E8E93', fontFamily: 'var(--font-mono)' }}>{r.code}</div>
       </div>
     )},
     { title: '成本价', dataIndex: 'buy_price', align: 'right', width: 80,
-      render: v => <Text style={{fontFamily:'Inter',fontVariantNumeric:'tabular-nums'}}>¥{v?.toFixed(2)}</Text> },
+      render: v => <Text style={{fontFamily:'var(--font-mono)',fontVariantNumeric:'tabular-nums'}}>¥{v?.toFixed(2)}</Text> },
     { title: '现价', dataIndex: 'current_price', align: 'right', width: 80,
-      render: (v, r) => <Text strong style={{fontFamily:'Inter',fontVariantNumeric:'tabular-nums', color: r.today_pct >=0 ? '#f04438' : '#12b76a'}}>¥{v?.toFixed(2)}</Text> },
+      render: (v, r) => <Text strong style={{fontFamily:'var(--font-mono)',fontVariantNumeric:'tabular-nums', color: r.today_pct >=0 ? 'var(--up)' : 'var(--down)'}}>¥{v?.toFixed(2)}</Text> },
     { title: '今日', dataIndex: 'today_pct', align: 'right', width: 78,
       render: v => <PnLText value={v} /> },
     { title: '持仓盈亏', align: 'right', width: 120, render: (_, r) => (
@@ -147,18 +147,18 @@ export default function Holdings() {
       </div>
     )},
     { title: '持仓', dataIndex: 'shares', align: 'right', width: 80,
-      render: v => <Text style={{fontFamily:'Inter'}}>{v?.toLocaleString()}股</Text> },
+      render: v => <Text style={{fontFamily:'var(--font-mono)'}}>{v?.toLocaleString()}股</Text> },
     { title: '市值', dataIndex: 'market_value', align: 'right', width: 90,
-      render: v => <Text strong style={{fontFamily:'Inter',fontVariantNumeric:'tabular-nums'}}>¥{(v/10000).toFixed(1)}万</Text> },
+      render: v => <Text strong style={{fontFamily:'var(--font-mono)',fontVariantNumeric:'tabular-nums'}}>¥{(v/10000).toFixed(1)}万</Text> },
     { title: '仓位', dataIndex: 'position_pct', align: 'center', width: 80,
       render: (_, r) => {
         const pos = summary.total_value > 0 ? Math.round(r.market_value / summary.total_value * 100) : 0;
-        return <Text style={{fontFamily:'Inter'}}>{pos}%</Text>;
+        return <Text style={{fontFamily:'var(--font-mono)'}}>{pos}%</Text>;
       }
     },
     { title: '评分', dataIndex: 'total_score', align: 'center', width: 80,
       render: v => {
-        const c = v >= 70 ? '#f04438' : v >= 60 ? '#f79009' : '#2e90fa';
+        const c = v >= 70 ? 'var(--up)' : v >= 60 ? 'var(--warn)' : 'var(--accent)';
         return <span className={'score-badge ' + (v>=70?'score-high':v>=60?'score-mid':'score-low')} style={{background:c+'15',color:c,borderColor:c+'30'}}>{v||'--'}</span>;
       }
     },
@@ -193,7 +193,7 @@ export default function Holdings() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>💼 我的持仓</Title>
+          <Title level={4} style={{ margin: 0, fontWeight: 700 }}><WalletOutlined style={{color:'var(--accent)',marginRight:6}}/>我的持仓</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>跟踪持仓盈亏，结合策略信号给出调仓建议</Text>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>添加持仓</Button>
@@ -204,7 +204,7 @@ export default function Holdings() {
         <Col span={6}>
           <Card bodyStyle={{ padding: '16px 20px' }}>
             <Statistic title="账户总资产" value={totalAssets} prefix="¥" precision={0}
-              valueStyle={{ fontSize: 24, fontWeight: 700, fontFamily: 'Inter' }} />
+              valueStyle={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)' }} />
             <div style={{ marginTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 11 }}>持仓市值 ¥{(totalValue/10000).toFixed(1)}万 · 现金 ¥{(totalCash/10000).toFixed(1)}万</Text>
             </div>
@@ -213,7 +213,7 @@ export default function Holdings() {
         <Col span={6}>
           <Card bodyStyle={{ padding: '16px 20px' }}>
             <Statistic title="持仓盈亏" value={totalPnL} prefix={totalPnL>=0?'+':''} precision={2}
-              valueStyle={{ fontSize: 24, fontWeight: 700, color: totalPnL>=0?'#f04438':'#12b76a', fontFamily: 'Inter' }} />
+              valueStyle={{ fontSize: 24, fontWeight: 700, color: totalPnL>=0?'var(--up)':'var(--down)', fontFamily: 'var(--font-mono)' }} />
             <div style={{ marginTop: 8 }}>
               <PnLText value={totalPnLPct} />
               <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>收益率</Text>
@@ -223,7 +223,7 @@ export default function Holdings() {
         <Col span={6}>
           <Card bodyStyle={{ padding: '16px 20px' }}>
             <Statistic title="今日盈亏" value={todayPnL} prefix={todayPnL>=0?'+':''} precision={0}
-              valueStyle={{ fontSize: 24, fontWeight: 700, color: todayPnL>=0?'#f04438':'#12b76a', fontFamily: 'Inter' }} />
+              valueStyle={{ fontSize: 24, fontWeight: 700, color: todayPnL>=0?'var(--up)':'var(--down)', fontFamily: 'var(--font-mono)' }} />
             <div style={{ marginTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 11 }}>{holdings.length}只持仓</Text>
             </div>
@@ -232,11 +232,11 @@ export default function Holdings() {
         <Col span={6}>
           <Card bodyStyle={{ padding: '16px 20px' }}>
             <Text type="secondary" style={{ fontSize: 12 }}>当前仓位</Text>
-            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'Inter', color: posPct > suggestedPos + 20 ? '#f04438' : '#101828', marginTop: 4 }}>{posPct}%</div>
+            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: posPct > suggestedPos + 20 ? 'var(--up)' : '#1A1A1E', marginTop: 4 }}>{posPct}%</div>
             <Progress percent={posPct} showInfo={false}
-              strokeColor={posPct > suggestedPos + 20 ? '#f04438' : posPct < suggestedPos - 20 ? '#12b76a' : '#2e90fa'}
+              strokeColor={posPct > suggestedPos + 20 ? 'var(--up)' : posPct < suggestedPos - 20 ? 'var(--down)' : 'var(--accent)'}
               style={{ marginTop: 8 }} />
-            <Text type="secondary" style={{ fontSize: 11 }}>建议仓位 {suggestedPos}% {posPct > suggestedPos + 20 ? '⚠️偏高' : posPct < suggestedPos - 20 ? '💡可加仓' : '✓合理'}</Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>建议仓位 {suggestedPos}% {posPct > suggestedPos + 20 ? <><WarningOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>偏高</> : posPct < suggestedPos - 20 ? '可加仓' : <><CheckCircleOutlined style={{color:'var(--down)',fontSize:12}}/>合理</>}</Text>
           </Card>
         </Col>
       </Row>
@@ -296,7 +296,7 @@ export default function Holdings() {
           {holdings.filter(h => h.current_price <= (h.stop_loss || 0)).length > 0 && (
             <Alert
               type="warning" showIcon style={{ marginBottom: 12 }}
-              message={<>⚠️ 触及止损：{holdings.filter(h => h.current_price <= (h.stop_loss || 0)).map(h => h.name).join('、')}</>}
+              message={<><WarningOutlined style={{color:'var(--warn)',fontSize:12,marginRight:2}}/>触及止损：{holdings.filter(h => h.current_price <= (h.stop_loss || 0)).map(h => h.name).join('、')}</>}
               description="已跌破止损线，建议严格止损"
             />
           )}
