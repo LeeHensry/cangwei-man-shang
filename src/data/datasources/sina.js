@@ -211,9 +211,7 @@ async function getDailyKline(code, startDate, endDate) {
       }
     }
 
-    // code格式统一返回sh600519/sz000858（与腾讯一致）
-    filtered.forEach(k => { k.code = toSinaCode(code); });
-
+    // code已在map中设为纯6位数字，保持与stock_info/stock_score等表一致
     return filtered;
   } catch (e) {
     console.error(`[sina] K线获取失败 ${code}:`, e.message);

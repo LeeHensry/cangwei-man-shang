@@ -189,7 +189,7 @@ export default function Dashboard() {
           <Title level={4} style={{ margin: 0, fontWeight: 700 }}>今日市场</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>{data.date} · {data.total_stocks}只股票 · 收盘数据</Text>
         </div>
-        <Button icon={<ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing} type="primary" ghost size="middle">
+        <Button icon={<ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing} size="middle">
           {syncing ? '同步中' : '刷新数据'}
         </Button>
       </div>

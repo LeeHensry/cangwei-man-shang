@@ -5,13 +5,25 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, RiseOutlined, FallOutlined,
-  WarningOutlined, CheckCircleOutlined, FundViewOutlined, CloudDownloadOutlined, WalletOutlined,
+  WarningOutlined, CheckCircleOutlined, FundViewOutlined, CloudDownloadOutlined, WalletOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { getPortfolio, addHolding, deleteHolding } from '../api';
+import { getPortfolio, addHolding, deleteHolding, getOverview } from '../api';
 
 const { Title, Text } = Typography;
+
+// 本金配置本地存储
+const CAPITAL_KEY = 'cwms_total_capital';
+function loadCapital() {
+  try {
+    const v = localStorage.getItem(CAPITAL_KEY);
+    return v ? parseFloat(v) : 1000000;
+  } catch(e) { return 1000000; }
+}
+function saveCapital(v) {
+  try { localStorage.setItem(CAPITAL_KEY, String(v)); } catch(e) {}
+}
 
 // ===== 持仓本地备份（防止Render免费版重启丢失数据）=====
 const PORTFOLIO_BACKUP_KEY = 'cwms_portfolio_backup';
@@ -69,8 +81,12 @@ export default function Holdings() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [capitalModalOpen, setCapitalModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const [capitalForm] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [totalCapital, setTotalCapital] = useState(loadCapital());
+  const [suggestedPos, setSuggestedPos] = useState(60);
   const navigate = useNavigate();
 
   const load = async () => {
@@ -85,6 +101,13 @@ export default function Holdings() {
       setData(d);
       // 每次加载成功都备份一次
       if (d.holdings) savePortfolioBackup(d.holdings);
+      // 获取市场温度建议仓位
+      try {
+        const overview = await getOverview();
+        if (overview?.temperature?.suggested_position) {
+          setSuggestedPos(overview.temperature.suggested_position);
+        }
+      } catch(e) {}
     } catch(e) {
       message.error('加载失败');
     } finally {
@@ -122,6 +145,18 @@ export default function Holdings() {
       message.success('已平仓');
       load();
     } catch(e) { message.error('操作失败'); }
+  };
+
+  const handleSaveCapital = async () => {
+    try {
+      const vals = await capitalForm.validateFields();
+      setTotalCapital(vals.capital);
+      saveCapital(vals.capital);
+      message.success('本金已更新');
+      setCapitalModalOpen(false);
+    } catch(e) {
+      if (e?.errorFields) return;
+    }
   };
 
   const summary = data?.summary || {};
@@ -182,12 +217,10 @@ export default function Holdings() {
   const totalPnL = summary.total_pnl || 0;
   const totalPnLPct = summary.total_pnl_pct || 0;
   const todayPnL = summary.today_pnl || 0;
-  const totalCash = Math.max(0, 1000000 - totalValue); // 假设100万本金，可配置化
+  const totalCash = Math.max(0, totalCapital - totalValue);
   const totalAssets = totalValue + totalCash;
+  const totalReturnPct = totalCapital > 0 ? ((totalAssets - totalCapital) / totalCapital * 100) : 0;
   const posPct = totalAssets > 0 ? Math.round(totalValue / totalAssets * 100) : 0;
-
-  // 基于市场温度给仓位建议（这里简化：固定基准60%）
-  const suggestedPos = 60;
 
   return (
     <div>
@@ -202,11 +235,14 @@ export default function Holdings() {
       {/* 账户概览 */}
       <Row gutter={[12,12]} style={{ marginBottom: 16 }}>
         <Col span={6}>
-          <Card bodyStyle={{ padding: '16px 20px' }}>
+          <Card bodyStyle={{ padding: '16px 20px' }} extra={
+            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => { capitalForm.setFieldsValue({ capital: totalCapital }); setCapitalModalOpen(true); }}>编辑</Button>
+          }>
             <Statistic title="账户总资产" value={totalAssets} prefix="¥" precision={0}
               valueStyle={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)' }} />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>持仓市值 ¥{(totalValue/10000).toFixed(1)}万 · 现金 ¥{(totalCash/10000).toFixed(1)}万</Text>
+            <div style={{ marginTop: 8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>市值 ¥{(totalValue/10000).toFixed(1)}万 · 现金 ¥{(totalCash/10000).toFixed(1)}万</Text>
+              <PnLText value={totalReturnPct} suffix="%" />
             </div>
           </Card>
         </Col>
@@ -216,7 +252,7 @@ export default function Holdings() {
               valueStyle={{ fontSize: 24, fontWeight: 700, color: totalPnL>=0?'var(--up)':'var(--down)', fontFamily: 'var(--font-mono)' }} />
             <div style={{ marginTop: 8 }}>
               <PnLText value={totalPnLPct} />
-              <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>收益率</Text>
+              <Text type="secondary" style={{ fontSize: 11, marginLeft: 8 }}>持仓收益率</Text>
             </div>
           </Card>
         </Col>
@@ -338,6 +374,24 @@ export default function Holdings() {
           <Form.Item name="buy_date" label="买入日期">
             <DatePicker style={{ width: '100%' }} defaultValue={dayjs()} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 设置本金弹窗 */}
+      <Modal
+        title="设置账户本金"
+        open={capitalModalOpen}
+        onOk={handleSaveCapital}
+        onCancel={() => setCapitalModalOpen(false)}
+        okText="保存" cancelText="取消"
+      >
+        <Form form={capitalForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="capital" label="初始本金（元）" rules={[{ required: true, message: '请输入本金' }]}>
+            <InputNumber min={10000} step={10000} style={{ width: '100%' }} prefix="¥"
+              formatter={v => v ? `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
+              parser={v => v.replace(/,/g, '')} />
+          </Form.Item>
+          <Text type="secondary" style={{ fontSize: 12 }}>用于计算总资产、仓位比例和总收益率。数据保存在本地浏览器中。</Text>
         </Form>
       </Modal>
     </div>

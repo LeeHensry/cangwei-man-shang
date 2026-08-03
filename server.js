@@ -59,16 +59,27 @@ app.get('/api/market/overview', async (req, res) => {
     // 用marketData里的完整版指数数据（带成交额）
     const indices = marketData.indices.length > 0 ? marketData.indices : await tq.getIndexQuotes();
     
-    // 获取板块行情
-    const sectors = db.prepare(`
+    // 获取板块行情（优先数据库，为空则实时拉取）
+    let sectors = db.prepare(`
       SELECT sector_code, sector_name, change_pct, leader_name, leader_pct
       FROM sector_daily ORDER BY trade_date DESC, change_pct DESC LIMIT 40
     `).all();
-    // 构造资金流近似数据（基于板块涨跌幅度）
+    if (sectors.length === 0) {
+      try {
+        const liveSectors = await ds.getSectorList();
+        sectors = (liveSectors || []).slice(0, 40).map(s => ({
+          sector_code: s.sector_code,
+          sector_name: s.sector_name,
+          change_pct: s.change_pct,
+          leader_name: s.leader_name || '',
+          leader_pct: s.leader_pct || 0,
+        }));
+      } catch(e) { console.error('getSectorList failed:', e.message); }
+    }
+    // 构造资金流近似数据（基于板块涨跌幅×估算体量）
     const sectorFlows = sectors.map(s => ({
       name: s.sector_name,
-      // 涨的板块资金流入、跌的流出（粗略估算，后续替换为真实资金API）
-      net_inflow: Math.round(s.change_pct * 8 + (Math.random() - 0.5) * 20),
+      net_inflow: Math.round(s.change_pct * 12),
       leader_name: s.leader_name, leader_pct: s.leader_pct,
     })).sort((a,b) => b.net_inflow - a.net_inflow);
     const concentration = calcMarketConcentration(sectorFlows);
@@ -222,9 +233,9 @@ app.get('/api/market/overview', async (req, res) => {
       return { ...r, ret_5d: factors.ret_5d, ret_20d: factors.ret_20d, momentum_state: factors.momentum_state };
     });
     
-    // TOP10 买入/关注
+    // TOP10 买入/关注/动量搭车
     const topStocks = scores
-      .filter(s => s.signal === 'buy' || s.signal === 'watch')
+      .filter(s => s.signal === 'buy' || s.signal === 'watch' || s.signal === 'momentum_buy')
       .sort((a,b) => b.total_score - a.total_score)
       .slice(0, 10)
       .map(s => {
@@ -304,13 +315,16 @@ app.get('/api/stocks', (req, res) => {
     
     // 行业筛选和新经济/老登过滤需要查quality_detail
     // 简化：直接查所有再过滤
+    const latestKlineDate = db.prepare('SELECT MAX(trade_date) as d FROM daily_kline').get().d;
     let rows = db.prepare(`
-      SELECT s.*, i.name, i.total_mv, v.pe
+      SELECT s.*, i.name, i.total_mv, v.pe,
+             k.close as current_price, k.pct_chg as daily_pct_chg
       FROM stock_score s
       LEFT JOIN stock_info i ON s.code = i.code
       LEFT JOIN valuation v ON s.code = v.code AND v.trade_date = (SELECT MAX(trade_date) FROM valuation)
+      LEFT JOIN daily_kline k ON s.code = k.code AND k.trade_date = ?
       ${where}
-    `).all(...params);
+    `).all(latestKlineDate, ...params);
     
     // 过滤行业/新经济/老登
     rows = rows.map(r => {
@@ -355,7 +369,7 @@ app.get('/api/stocks', (req, res) => {
         current_price: r.current_price,
         target_price: r.target_price,
         stop_loss: r.stop_loss,
-        pct_chg: r.current_price ? 0 : null,
+        pct_chg: r.daily_pct_chg,
         industry: r._industry,
         is_new_economy: r._isNewEconomy,
         is_oldman: r._isOldman,
@@ -531,22 +545,22 @@ app.post('/api/sync', async (req, res) => {
       // 优先使用股票池，其次stock_info，最后兜底热门股票
       let codes = stockPool.getPoolCodes();
       if (codes.length === 0) {
-        codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code).filter(c => c.startsWith('sh') || c.startsWith('sz'));
+        codes = db.prepare('SELECT code FROM stock_info').all().map(r => r.code).filter(c => /^\d{6}$/.test(c));
       }
       
       if (codes.length === 0) {
         // 首次同步：拉取热门股票池作为种子（股票池更新会扩大到200只）
         emitProgress('list', '数据库为空，加载热门股票池...', 5);
         const hotCodes = [
-          'sh600519','sz000858','sh601318','sh600036','sz000333','sh600276',
-          'sz300750','sh601012','sh600900','sh601899','sz002594','sh601166',
-          'sh600030','sz000001','sh600887','sh601398','sh601288','sh600000',
-          'sh601988','sh600050','sz000725','sh600585','sh601668','sh601390',
-          'sz002475','sz300059','sh600438','sz002352','sh601888','sh600309',
-          'sh603288','sz000568','sz000596','sh600809','sz300124','sz002415',
-          'sh603501','sh688981','sh688012','sh688256','sz300760','sz002241',
-          'sh600048','sh601628','sh601601','sh600104','sh601857','sh600028',
-          'sh601088','sh600111','sh600547','sh601225','sz002460','sz300274',
+          '600519','000858','601318','600036','000333','600276',
+          '300750','601012','600900','601899','002594','601166',
+          '600030','000001','600887','601398','601288','600000',
+          '601988','600050','000725','600585','601668','601390',
+          '002475','300059','600438','002352','601888','600309',
+          '603288','000568','000596','600809','300124','002415',
+          '603501','688981','688012','688256','300760','002241',
+          '600048','601628','601601','600104','601857','600028',
+          '601088','600111','600547','601225','002460','300274',
         ];
         codes = hotCodes;
       }
@@ -556,7 +570,7 @@ app.post('/api/sync', async (req, res) => {
       const quotes = await tq.getQuickStockList(codes);
       const stmt = db.prepare(`INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`);
       const insInfo = db.transaction((rows) => { for(const r of rows) stmt.run(r.code,r.name,r.market,r.is_st||0,r.total_mv,r.circ_mv,dayjs().format('YYYY-MM-DD HH:mm:ss')); });
-      insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('sh')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
+      insInfo(quotes.filter(q=>q.code&&q.name).map(q => ({code:q.code,name:q.name,market:q.market||(q.code.startsWith('6')?'SH':'SZ'),is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0),total_mv:q.total_mv,circ_mv:q.circ_mv})));
       // 同时把PE写入valuation表
       const today = dayjs().format('YYYYMMDD');
       const vstmt = db.prepare(`INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`);
@@ -596,7 +610,7 @@ app.post('/api/sync', async (req, res) => {
       for (let i = 0; i < allCodes.length; i++) {
         const code = allCodes[i];
         const ks = db.prepare(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`).all(code);
-        if (ks.length < 60) continue;
+        if (ks.length < 25) continue;
         const inds = calcAllIndicators(ks);
         const istmt = db.prepare(`INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         const iins = db.transaction((rows) => { for(const r of rows) if(r.ma5!==null) istmt.run(code,r.trade_date,r.ma5,r.ma10,r.ma20,r.ma60,r.ma120,r.ma250,r.vol_ma5,r.vol_ma20,r.macd_dif,r.macd_dea,r.macd_bar,r.rsi6,r.rsi14,r.kdj_k,r.kdj_d,r.kdj_j,r.boll_upper,r.boll_mid,r.boll_lower); });
@@ -692,7 +706,16 @@ app.get('/api/crypto/market', async (req, res) => {
       } catch(e) {}
       await new Promise(r=>setTimeout(r,80));
     }
-    results.sort((a,b) => Math.abs(50-b.score) - Math.abs(50-a.score));
+    // BTC/ETH/SOL 固定置顶，其余按信号强度排序
+    const PRIORITY = ['BTC', 'ETH', 'SOL'];
+    results.sort((a,b) => {
+      const aIdx = PRIORITY.indexOf(a.symbol);
+      const bIdx = PRIORITY.indexOf(b.symbol);
+      if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+      if (aIdx !== -1) return -1;
+      if (bIdx !== -1) return 1;
+      return Math.abs(50-b.score) - Math.abs(50-a.score);
+    });
     res.write(`data: ${JSON.stringify({type:'done', data:results})}\n\n`);
     res.end();
   } catch(e) { res.status(500).json({error: e.message}); }

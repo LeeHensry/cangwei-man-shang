@@ -229,7 +229,7 @@ function calcAllShortSignals() {
   const results = [];
   for (const code of codes) {
     const sig = calcShortSignal(code);
-    if (sig && sig.score !== 50) results.push(sig);
+    if (sig && sig.short_score >= 60) results.push(sig);
   }
 
   // 保存到数据库
