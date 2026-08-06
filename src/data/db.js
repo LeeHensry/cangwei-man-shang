@@ -16,7 +16,7 @@
  */
 
 const TURSO_URL = process.env.TURSO_DATABASE_URL || 'libsql://topup-db-leehensry.aws-ap-northeast-1.turso.io';
-const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
+const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODU5MjQxMTgsImlkIjoiMDE5ZmQxNWUtYjYwMS03ZjAwLWIxZDgtNjNjNzEzZDIwOGIwIiwia2lkIjoiaWdpdjI2dEFtM011U1BaMGhxVU45eUFua0hndkRsN2tUQkx5c0toYW5LZyIsInJpZCI6ImY2MjRjYTZjLTYyMGEtNDc3MS05MWYyLThjZWI0MGMyYmQ1OSJ9.fUTauZv6nO7pIuQbia9KhymmzkMCR1GweWjCZ_NwZiu8iU4W2nYeVqBjBky6RA7FuvW-8K30-4uocuae2iqDCw';
 const isLocalDev = process.env.NODE_ENV === 'localdev';
 const useTurso = !isLocalDev && !!TURSO_TOKEN;
 
