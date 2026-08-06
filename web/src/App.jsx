@@ -11,6 +11,7 @@ import {
   ControlOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  FundProjectionScreenOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider, UserBadge, useAuth } from './auth';
@@ -22,6 +23,7 @@ import Holdings from './pages/Holdings';
 import Backtest from './pages/Backtest';
 import ShortTerm from './pages/ShortTerm';
 import Crypto from './pages/Crypto';
+import Options from './pages/Options';
 import Settings from './pages/Settings';
 
 const { Header, Sider, Content } = Layout;
@@ -86,6 +88,7 @@ function AppShell() {
     { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
     { key: '/short', icon: <RocketOutlined />, label: '短线机会' },
     { key: '/crypto', icon: <WalletOutlined />, label: '加密货币' },
+    { key: '/options', icon: <FundProjectionScreenOutlined />, label: '期权策略' },
     { key: '/crowding', icon: <RadarChartOutlined />, label: '拥挤度雷达' },
     { key: '/holdings', icon: <StarOutlined />, label: '自选持仓' },
     { key: '/backtest', icon: <HistoryOutlined />, label: '回测分析' },
@@ -96,7 +99,7 @@ function AppShell() {
 
   const getPageTitle = () => {
     const map = { '/': '市场总览', '/signals': '价值信号', '/short': '短线机会', '/crypto': '加密货币',
-      '/crowding': '拥挤度雷达', '/holdings': '自选持仓', '/backtest': '回测分析', '/settings': '策略配置' };
+      '/options': '期权策略', '/crowding': '拥挤度雷达', '/holdings': '自选持仓', '/backtest': '回测分析', '/settings': '策略配置' };
     for (const [path, title] of Object.entries(map)) {
       if (location.pathname.startsWith(path) && path !== '/') return title;
       if (location.pathname === path) return title;
@@ -205,6 +208,7 @@ function AppShell() {
             <Route path="/signals" element={<Signals />} />
             <Route path="/short" element={<ShortTerm />} />
             <Route path="/crypto" element={<Crypto />} />
+            <Route path="/options" element={<Options />} />
             <Route path="/crowding" element={<Crowding />} />
             <Route path="/stock/:code" element={<StockDetail />} />
             <Route path="/holdings" element={<Holdings />} />

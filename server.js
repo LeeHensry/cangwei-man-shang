@@ -410,6 +410,104 @@ app.get('/api/version', (req, res) => {
   res.json({ version, name: '仓位满上 TopUp', build_time: new Date().toISOString() });
 });
 
+// ========== 期权模块 ==========
+const { publicClient: deribit } = require('./src/options/deribit');
+const { priceOption, impliedVolatility, timeToExpiry } = require('./src/options/pricing');
+const { calcProfitCurve, detectStrategy, summarizeStrategy, calcLegPnL } = require('./src/options/calculator');
+const { gammaExplosion, coveredCall, protectivePut, shortStrangle, longStraddle, scanAllSignals } = require('./src/options/strategies');
+const { getHistoricalKlines, calcHistoricalVolatility } = require('./src/options/marketData');
+const { runAllBacktests } = require('./src/options/backtest');
+
+// 获取期权链行情
+app.get('/api/options/chain', async (req, res) => {
+  try {
+    const currency = (req.query.currency || 'BTC').toUpperCase();
+    const result = await deribit.getOptionChainSummary(currency);
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 获取期权策略信号
+app.get('/api/options/signals', async (req, res) => {
+  try {
+    const currency = (req.query.currency || 'BTC').toUpperCase();
+    const bias = req.query.bias || 'neutral'; // bullish/bearish/neutral
+    const volRegime = req.query.volatility || 'normal'; // high/low/normal
+
+    const chain = await deribit.getOptionChainSummary(currency);
+    const currentPrice = chain.indexPrice;
+    // 取最近3个到期日做信号
+    const signals = scanAllSignals({
+      currentPrice,
+      chain: chain.chains,
+      marketBias: bias,
+      volatilityRegime: volRegime
+    });
+
+    res.json({ currency, currentPrice, signals, timestamp: new Date().toISOString() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 期权定价/Greeks计算
+app.post('/api/options/greeks', (req, res) => {
+  try {
+    const { type, S, K, T, r = 0, sigma } = req.body;
+    const Tyears = typeof T === 'number' && T > 10 ? T / 365.25 : T; // 如果T>10视为天数
+    const result = priceOption(type, S, K, Tyears, r, sigma);
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 盈亏计算器
+app.post('/api/options/calculator', (req, res) => {
+  try {
+    const { legs, currentPrice, iv = 0.6, daysToExpiry = 7, r = 0, range = 0.5, atExpiry = true } = req.body;
+    if (!legs || !Array.isArray(legs) || legs.length === 0) {
+      return res.status(400).json({ error: '需要至少一个期权腿' });
+    }
+    // 对premium=0的腿用BS模型估算当前权利金
+    const T = daysToExpiry / 365.25;
+    const processedLegs = legs.map(leg => {
+      if (leg.premium > 0) return leg;
+      // 用BS估算当前价格
+      const bsPrice = priceOption(leg.type, currentPrice, leg.K, T, r, iv);
+      return { ...leg, premium: Math.max(bsPrice.price, 0.01) };
+    });
+    // 默认显示到期日盈亏（T=0），更直观
+    const curveDays = atExpiry ? 0 : daysToExpiry;
+    const curve = calcProfitCurve(processedLegs, currentPrice, curveDays, iv, r, { range, steps: 200 });
+    // 同时计算当前价值（非到期）
+    const currentCurve = atExpiry ? calcProfitCurve(processedLegs, currentPrice, daysToExpiry, iv, r, { range, steps: 50 }) : null;
+    const summary = summarizeStrategy(processedLegs, curve, currentPrice);
+    res.json({ summary, curve, currentCurve, legs: processedLegs, atExpiry });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 期权策略回测
+app.get('/api/options/backtest', async (req, res) => {
+  try {
+    const currency = (req.query.currency || 'BTC').toUpperCase();
+    const symbol = currency === 'BTC' ? 'BTCUSDT' : 'ETHUSDT';
+    const days = parseInt(req.query.days || '365');
+    const iv = parseFloat(req.query.iv || '0.6');
+
+    const klines = await getHistoricalKlines(symbol, '1d', days);
+    const histIv = calcHistoricalVolatility(klines) || iv;
+    const results = runAllBacktests(klines, { iv: histIv, otmPercent: 0.1 });
+    results.historicalVolatility = (histIv * 100).toFixed(1) + '%';
+    res.json(results);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 获取标的当前价格
+app.get('/api/options/price', async (req, res) => {
+  try {
+    const currency = (req.query.currency || 'BTC').toUpperCase();
+    const price = await deribit.getIndexPrice(currency);
+    res.json({ currency, price, timestamp: new Date().toISOString() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ========== 数据源管理 ==========
 app.get('/api/datasource', async (req, res) => {
   try {
