@@ -10,13 +10,12 @@
  *
  * 搭车阶段(30-65)→持有(65-80)→预警(80-90)→极端危险(>90)
  */
-const db = require('../data/db');
+const { dbGet, dbAll, dbRun, dbBatch } = require('../data/db');
 
 // ========== 个股级拥挤度因子 ==========
 
 /**
  * 动量加速度 = 近5日涨幅 / 近20日涨幅
- * >1.5 加速赶顶；0.8-1.2 匀速；<0.5 减速
  */
 function calcMomentumAcceleration(klines) {
   if (!klines || klines.length < 25) return { ratio: 1, state: 'normal' };
@@ -29,17 +28,13 @@ function calcMomentumAcceleration(klines) {
   if (ret20 <= 0) return { ratio: ret5 > 5 ? 2.5 : 0.5, ret5, ret20, state: ret5 > 5 ? 'accelerating_down' : 'decelerating' };
   const ratio = ret20 !== 0 ? Math.abs(ret5 / 5) / Math.abs(ret20 / 20) : 1;
   let state = 'normal';
-  if (ratio > 1.8 && ret5 > 8) state = 'blowoff'; // 加速赶顶
-  else if (ratio > 1.3 && ret5 > 3) state = 'accelerating'; // 温和加速
-  else if (ratio < 0.5 && ret20 > 10) state = 'decelerating'; // 上涨减速
-  else if (ret5 < -5 && ret20 > 5) state = 'reversing'; // 反转下跌
+  if (ratio > 1.8 && ret5 > 8) state = 'blowoff';
+  else if (ratio > 1.3 && ret5 > 3) state = 'accelerating';
+  else if (ratio < 0.5 && ret20 > 10) state = 'decelerating';
+  else if (ret5 < -5 && ret20 > 5) state = 'reversing';
   return { ratio: +ratio.toFixed(2), ret5: +ret5.toFixed(2), ret20: +ret20.toFixed(2), state };
 }
 
-/**
- * 换手率分位：近3年（约750个交易日）的换手率百分位
- * 百分位越高说明当前越活跃/拥挤
- */
 function calcTurnoverPercentile(klines) {
   if (!klines || klines.length < 60) return { percentile: 50, current_turnover: 0 };
   const today = klines[0];
@@ -51,11 +46,6 @@ function calcTurnoverPercentile(klines) {
   return { percentile, current_turnover: +current.toFixed(2), avg_turnover: +(turnovers.reduce((a,b)=>a+b,0)/turnovers.length).toFixed(2) };
 }
 
-/**
- * 量价背离检测
- * 价格创N日新高但成交量低于N日均量 → 顶背离
- * 价格创N日新低但成交量萎缩 → 底背离
- */
 function calcVolumePriceDivergence(klines) {
   if (!klines || klines.length < 25) return { divergence: null, score: 0 };
   const recent = klines.slice(0, 20);
@@ -72,27 +62,24 @@ function calcVolumePriceDivergence(klines) {
   let divergence = null;
   let score = 0;
   if (isNewHigh && volRatio < 0.8) {
-    divergence = 'top_divergence'; // 价创新高但缩量
+    divergence = 'top_divergence';
     score = 80;
   } else if (isNewHigh && volRatio < 1.0) {
     divergence = 'weak_top_divergence';
     score = 60;
   } else if (isNewLow && volRatio < 0.7) {
-    divergence = 'bottom_divergence'; // 缩量下跌（可能见底）
+    divergence = 'bottom_divergence';
     score = -30;
   } else if (isNewHigh && volRatio > 1.8) {
-    divergence = 'blowoff_volume'; // 天量新高（最后冲顶）
+    divergence = 'blowoff_volume';
     score = 70;
   } else if (volRatio > 2.0 && current < klines[1].close) {
-    divergence = 'high_volume_decline'; // 放量下跌（出货）
+    divergence = 'high_volume_decline';
     score = 90;
   }
   return { divergence, score, vol_ratio: +volRatio.toFixed(2), is_new_high: isNewHigh, is_new_low: isNewLow };
 }
 
-/**
- * 连涨/连跌天数
- */
 function calcConsecutiveDays(klines) {
   if (!klines || klines.length < 2) return { up_days: 0, down_days: 0 };
   let upDays = 0, downDays = 0;
@@ -112,11 +99,11 @@ function calcConsecutiveDays(klines) {
 /**
  * 个股拥挤度综合评分（0-100）
  */
-function calcStockCrowding(code) {
-  const klines = db.prepare(`
+async function calcStockCrowding(code) {
+  const klines = await dbAll(`
     SELECT trade_date, close, volume, amount, pct_chg, high, low, turnover
     FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 750
-  `).all(code);
+  `, [code]);
   if (klines.length < 30) {
     return { score: 50, factors: {}, level: 'normal', signal: 'hold' };
   }
@@ -124,23 +111,19 @@ function calcStockCrowding(code) {
   const turnover = calcTurnoverPercentile(klines);
   const volDiv = calcVolumePriceDivergence(klines);
   const consecutive = calcConsecutiveDays(klines);
-  // 近期涨幅绝对值
   const ret5 = momentum.ret5 || 0;
   const ret20 = momentum.ret20 || 0;
-  // ---- 加权评分 ----
-  let score = 30; // 基础分
+  let score = 30;
   const factors = {};
-  // 1. 动量加速度(25分)
   let momentumScore = 0;
   if (momentum.state === 'blowoff') momentumScore = 25;
   else if (momentum.state === 'accelerating' && ret5 > 5) momentumScore = 18;
   else if (momentum.state === 'accelerating') momentumScore = 12;
   else if (momentum.state === 'normal') momentumScore = 8;
   else if (momentum.state === 'decelerating') momentumScore = 5;
-  else if (momentum.state === 'reversing') momentumScore = 20; // 反转也危险
+  else if (momentum.state === 'reversing') momentumScore = 20;
   factors.momentum = momentumScore;
   score += momentumScore;
-  // 2. 换手率分位(20分)
   let turnoverScore = 0;
   if (turnover.percentile >= 95) turnoverScore = 20;
   else if (turnover.percentile >= 85) turnoverScore = 15;
@@ -148,26 +131,22 @@ function calcStockCrowding(code) {
   else if (turnover.percentile >= 50) turnoverScore = 5;
   factors.turnover = turnoverScore;
   score += turnoverScore;
-  // 3. 量价背离(15分)
   factors.divergence = volDiv.score > 0 ? Math.round(volDiv.score * 0.15) : 0;
   score += factors.divergence;
-  // 4. 连涨天数(10分)
   let consecutiveScore = 0;
   if (consecutive.up_days >= 7) consecutiveScore = 10;
   else if (consecutive.up_days >= 5) consecutiveScore = 7;
   else if (consecutive.up_days >= 3) consecutiveScore = 4;
   factors.consecutive = consecutiveScore;
   score += consecutiveScore;
-  // 5. 短期涨幅绝对值(15分) - 短期暴涨是最直接的拥挤信号
   let retScore = 0;
   if (ret5 >= 25) retScore = 15;
   else if (ret5 >= 15) retScore = 12;
   else if (ret5 >= 8) retScore = 8;
   else if (ret5 >= 3) retScore = 4;
-  else if (ret5 <= -10) retScore = 10; // 暴跌也是踩踏信号
+  else if (ret5 <= -10) retScore = 10;
   factors.short_return = retScore;
   score += retScore;
-  // 6. 20日涨幅(15分)
   let ret20Score = 0;
   if (ret20 >= 50) ret20Score = 15;
   else if (ret20 >= 30) ret20Score = 12;
@@ -176,13 +155,12 @@ function calcStockCrowding(code) {
   factors.mid_return = ret20Score;
   score += ret20Score;
   score = Math.max(0, Math.min(100, Math.round(score)));
-  // 拥挤等级
   let level = 'normal', signal = 'hold';
-  if (score < 30) { level = 'cold'; signal = 'accumulate'; }       // 冷清，可布局
-  else if (score < 55) { level = 'warm'; signal = 'buy_zone'; }    // 温和升温，可搭车
-  else if (score < 75) { level = 'hot'; signal = 'hold'; }         // 火热，持有不加
-  else if (score < 90) { level = 'crowded'; signal = 'trim'; }     // 拥挤预警，减仓
-  else { level = 'extreme'; signal = 'exit'; }                     // 极端拥挤，清仓
+  if (score < 30) { level = 'cold'; signal = 'accumulate'; }
+  else if (score < 55) { level = 'warm'; signal = 'buy_zone'; }
+  else if (score < 75) { level = 'hot'; signal = 'hold'; }
+  else if (score < 90) { level = 'crowded'; signal = 'trim'; }
+  else { level = 'extreme'; signal = 'exit'; }
   return {
     score, level, signal,
     factors: {
@@ -199,19 +177,14 @@ function calcStockCrowding(code) {
 
 // ========== 板块级拥挤度 ==========
 
-/**
- * 计算板块拥挤度
- * 用同板块个股的平均拥挤度+板块内分化度（同涨同跌度）
- * @param {string} industryName 行业名称（与quality_detail中的industry对应）
- */
-function calcSectorCrowding(industryName) {
-  const latestDate = db.prepare('SELECT MAX(trade_date) as d FROM stock_score').get().d;
+async function calcSectorCrowding(industryName) {
+  const latestDateRow = await dbGet('SELECT MAX(trade_date) as d FROM stock_score');
+  const latestDate = latestDateRow?.d;
   if (!latestDate) return { score: 50, level: 'normal' };
-  // 获取该行业所有股票的评分
-  const allScores = db.prepare(`
+  const allScores = await dbAll(`
     SELECT s.code, s.total_score, s.technical_score, s.quality_detail
     FROM stock_score s WHERE s.trade_date = ? AND s.strategy = 'value'
-  `).all(latestDate);
+  `, [latestDate]);
   const sectorStocks = allScores.filter(s => {
     try {
       const qd = JSON.parse(s.quality_detail);
@@ -219,44 +192,38 @@ function calcSectorCrowding(industryName) {
     } catch(e) { return false; }
   });
   if (sectorStocks.length < 3) return { score: 50, level: 'normal', stock_count: sectorStocks.length };
-  // 计算板块内个股拥挤度均值
   let totalCrowding = 0;
   let validCount = 0;
   let momentumUp = 0;
   const pctChanges = [];
   for (const stock of sectorStocks) {
-    const crowding = calcStockCrowding(stock.code);
+    const crowding = await calcStockCrowding(stock.code);
     if (crowding) {
       totalCrowding += crowding.score;
       validCount++;
       if (crowding.factors.ret_5d > 0) momentumUp++;
-      // 近5日涨跌幅（从kline取）
-      const k = db.prepare('SELECT pct_chg FROM daily_kline WHERE code=? ORDER BY trade_date DESC LIMIT 1').get(stock.code);
+      const k = await dbGet('SELECT pct_chg FROM daily_kline WHERE code=? ORDER BY trade_date DESC LIMIT 1', [stock.code]);
       if (k) pctChanges.push(k.pct_chg || 0);
     }
   }
   if (validCount === 0) return { score: 50, level: 'normal', stock_count: 0 };
   const avgCrowding = totalCrowding / validCount;
-  // 同涨同跌度：如果板块内大部分股票同方向，说明一致性行动
   const upRatio = pctChanges.filter(p => p > 0).length / Math.max(pctChanges.length, 1);
   let syncScore = 0;
-  if (upRatio > 0.8) syncScore = 15;      // 80%同涨
+  if (upRatio > 0.8) syncScore = 15;
   else if (upRatio > 0.65) syncScore = 8;
-  else if (upRatio < 0.2) syncScore = 15; // 80%同跌（踩踏）
+  else if (upRatio < 0.2) syncScore = 15;
   else if (upRatio < 0.35) syncScore = 8;
-  // 龙头滞涨信号：板块内涨幅最大的个股开始减速
   let leaderLagScore = 0;
   if (pctChanges.length > 0) {
-    // 用近期涨幅判断
-    const stockCrowdings = sectorStocks.map(s => {
-      const c = calcStockCrowding(s.code);
-      return { code: s.code, crowding: c };
-    }).filter(x => x.crowding);
-    // 找出近20日涨幅最高的（龙头）
+    const stockCrowdings = [];
+    for (const s of sectorStocks) {
+      const c = await calcStockCrowding(s.code);
+      if (c) stockCrowdings.push({ code: s.code, crowding: c });
+    }
     const sorted = stockCrowdings.sort((a,b) => (b.crowding.factors.ret_20d||0) - (a.crowding.factors.ret_20d||0));
     if (sorted.length > 0) {
       const leader = sorted[0].crowding;
-      // 龙头近5日涨幅减弱但20日涨幅仍高 → 龙头滞涨
       if (leader.factors.ret_20d > 20 && leader.factors.momentum_accel?.state === 'decelerating') {
         leaderLagScore = 20;
       }
@@ -280,16 +247,13 @@ function calcSectorCrowding(industryName) {
   };
 }
 
-/**
- * 全市场板块拥挤度扫描
- */
-function calcAllSectorCrowding() {
-  const latestDate = db.prepare('SELECT MAX(trade_date) as d FROM stock_score').get().d;
+async function calcAllSectorCrowding() {
+  const latestDateRow = await dbGet('SELECT MAX(trade_date) as d FROM stock_score');
+  const latestDate = latestDateRow?.d;
   if (!latestDate) return [];
-  const allScores = db.prepare(`
+  const allScores = await dbAll(`
     SELECT s.code, s.quality_detail FROM stock_score s WHERE s.trade_date = ? AND s.strategy = 'value'
-  `).all(latestDate);
-  // 收集所有行业
+  `, [latestDate]);
   const industries = new Set();
   const industryStocks = {};
   for (const s of allScores) {
@@ -304,14 +268,18 @@ function calcAllSectorCrowding() {
   const results = [];
   for (const ind of industries) {
     if (industryStocks[ind].length < 3) continue;
-    const crowding = calcSectorCrowding(ind);
-    // 板块涨跌幅
-    const sectorData = db.prepare(`
-      SELECT change_pct, leader_name, leader_pct FROM sector_daily
-      WHERE trade_date = (SELECT MAX(trade_date) FROM sector_daily)
-      AND (sector_name LIKE ? OR leader_name IN (SELECT name FROM stock_info WHERE code IN (` + industryStocks[ind].map(()=>'?').join(',') + `)))
-      LIMIT 1
-    `).get('%' + ind.slice(0,2) + '%', ...industryStocks[ind]);
+    const crowding = await calcSectorCrowding(ind);
+    const codes = industryStocks[ind];
+    const ph = codes.map(()=>'?').join(',');
+    let sectorData = null;
+    try {
+      sectorData = await dbGet(`
+        SELECT change_pct, leader_name, leader_pct FROM sector_daily
+        WHERE trade_date = (SELECT MAX(trade_date) FROM sector_daily)
+        AND (sector_name LIKE ? OR leader_name IN (SELECT name FROM stock_info WHERE code IN (` + ph + `)))
+        LIMIT 1
+      `, ['%' + ind.slice(0,2) + '%', ...codes]);
+    } catch(e) {}
     results.push({
       sector: ind,
       crowding_score: crowding.score,
@@ -327,20 +295,17 @@ function calcAllSectorCrowding() {
 }
 
 /**
- * 获取个股的拥挤度信号（含搭车/减仓建议）
- * 这是对外的主要接口
+ * 获取个股的拥挤度信号
  */
-function getCrowdingSignal(code) {
-  const stockInfo = db.prepare('SELECT name FROM stock_info WHERE code=?').get(code);
+async function getCrowdingSignal(code) {
+  const stockInfo = await dbGet('SELECT name FROM stock_info WHERE code=?', [code]);
   if (!stockInfo) return null;
-  const stockCrowding = calcStockCrowding(code);
-  // 获取所属行业和是否老登股/困境股（避免循环引用，直接判断关键词）
+  const stockCrowding = await calcStockCrowding(code);
   let industryName = '通用';
   let isOldman = false;
   let isDistressed = false;
   
   const name = (stockInfo.name || '').replace(/\s+/g, '');
-  // 老登股判断（银行/基建/铁路/航空/港口/高速/电力/地产/建筑/钢铁/煤炭/石油石化）
   const oldmanKeywords = ['银行','保险','证券','券商','铁路','航空','机场','港口','高速','电力','核电',
     '地产','万科','保利','置业','建筑','中铁','中建','铁建','交建','钢铁','石油','石化','煤炭'];
   const distressedKeywords = ['地产','万科','保利','置业','碧桂园'];
@@ -351,23 +316,21 @@ function getCrowdingSignal(code) {
     if (name.includes(kw)) { isDistressed = true; break; }
   }
   
-  // 尝试从最新quality_detail读取准确行业名
-  const latestScore = db.prepare(`
+  const latestScore = await dbGet(`
     SELECT quality_detail FROM stock_score WHERE code=? ORDER BY trade_date DESC LIMIT 1
-  `).get(code);
+  `, [code]);
   if (latestScore?.quality_detail) {
     try {
       const qd = JSON.parse(latestScore.quality_detail);
       if (qd.industry) industryName = qd.industry;
     } catch(e) {}
   }
-  const sectorCrowding = calcSectorCrowding(industryName);
-  // 综合个股+板块的信号
+  const sectorCrowding = await calcSectorCrowding(industryName);
   const combinedScore = Math.round(stockCrowding.score * 0.6 + sectorCrowding.score * 0.4);
   let action = 'hold';
   let actionDetail = '';
-  let momentumBonus = 0;  // 动量搭车加分（给综合评分用）
-  let crowdingPenalty = 0; // 拥挤惩罚分（给综合评分用）
+  let momentumBonus = 0;
+  let crowdingPenalty = 0;
   const reasons = [];
   if (combinedScore >= 90) {
     action = 'exit';
@@ -387,7 +350,6 @@ function getCrowdingSignal(code) {
     actionDetail = '🔥 持有阶段，不追加仓位';
     crowdingPenalty = 3;
   } else if (combinedScore >= 30) {
-    // 老登股和困境股不给动量搭车信号
     if (isOldman || isDistressed) {
       action = 'hold';
       actionDetail = '传统行业/困境股，不做动量搭车';
@@ -404,7 +366,6 @@ function getCrowdingSignal(code) {
     actionDetail = '🧊 冷清区域，逆向布局机会';
     momentumBonus = 0;
   }
-  // 特别危险信号
   if (stockCrowding.factors.volume_divergence?.divergence === 'high_volume_decline') {
     action = 'exit';
     actionDetail = '🚨 放量下跌，资金出逃，立即止损/清仓';
@@ -441,22 +402,20 @@ function getCrowdingSignal(code) {
 /**
  * 批量计算全市场拥挤度，存入数据库
  */
-function calcAllCrowding() {
+async function calcAllCrowding() {
   const dayjs = require('dayjs');
   const today = dayjs().format('YYYYMMDD');
-  const codes = db.prepare('SELECT code, name FROM stock_info WHERE is_st = 0').all();
+  const codes = await dbAll('SELECT code, name FROM stock_info WHERE is_st = 0');
   const results = [];
   console.log(`\n🔍 计算拥挤度，共 ${codes.length} 只股票`);
-  // 先算板块拥挤度（缓存）
   const sectorCrowdingCache = {};
   for (let i = 0; i < codes.length; i++) {
     const { code, name } = codes[i];
     try {
-      const signal = getCrowdingSignal(code);
+      const signal = await getCrowdingSignal(code);
       if (!signal) continue;
-      // 缓存板块拥挤度
       if (!sectorCrowdingCache[signal.industry]) {
-        sectorCrowdingCache[signal.industry] = calcSectorCrowding(signal.industry);
+        sectorCrowdingCache[signal.industry] = await calcSectorCrowding(signal.industry);
       }
       const secCrowd = sectorCrowdingCache[signal.industry];
       results.push({
@@ -489,13 +448,14 @@ function calcAllCrowding() {
   // 存入数据库
   const columns = ['code','name','trade_date','stock_crowding_score','sector_crowding_score',
     'combined_crowding_score','level','action','momentum_bonus','crowding_penalty','factors_json'];
-  const placeholders = columns.map(()=>'?').join(',');
-  const stmt = db.prepare(`INSERT OR REPLACE INTO crowding_score
-    (${columns.join(',')}) VALUES (${placeholders})`);
-  const insertMany = db.transaction((rows) => {
-    for (const r of rows) stmt.run(...columns.map(c => r[c] ?? null));
-  });
-  insertMany(results);
+  const insertSql = `INSERT OR REPLACE INTO crowding_score (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`;
+  const stmts = results.map(r => ({
+    sql: insertSql,
+    args: columns.map(c => r[c] ?? null)
+  }));
+  for (let i = 0; i < stmts.length; i += 200) {
+    await dbBatch(stmts.slice(i, i + 200));
+  }
   // 板块拥挤度汇总
   const sectorResults = Object.entries(sectorCrowdingCache).map(([name, data]) => ({
     sector: name,
@@ -505,12 +465,15 @@ function calcAllCrowding() {
     up_ratio: data.up_ratio,
     trade_date: today,
   }));
-  const secStmt = db.prepare(`INSERT OR REPLACE INTO sector_crowding
-    (sector, trade_date, crowding_score, level, stock_count, up_ratio) VALUES (?,?,?,?,?,?)`);
-  const insertSectors = db.transaction((rows) => {
-    for (const r of rows) secStmt.run(r.sector, r.trade_date, r.crowding_score, r.level, r.stock_count, r.up_ratio);
-  });
-  insertSectors(sectorResults);
+  const secSql = `INSERT OR REPLACE INTO sector_crowding
+    (sector, trade_date, crowding_score, level, stock_count, up_ratio) VALUES (?,?,?,?,?,?)`;
+  const secStmts = sectorResults.map(r => ({
+    sql: secSql,
+    args: [r.sector, r.trade_date, r.crowding_score, r.level, r.stock_count, r.up_ratio]
+  }));
+  for (let i = 0; i < secStmts.length; i += 200) {
+    await dbBatch(secStmts.slice(i, i + 200));
+  }
   console.log(`\n✅ 拥挤度计算完成，共 ${results.length} 只股票，${sectorResults.length} 个板块`);
   return { stocks: results.length, sectors: sectorResults.length };
 }

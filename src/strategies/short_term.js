@@ -2,25 +2,23 @@
  * 短线策略 - 基于技术面+量价的短线交易信号
  * 适合持股周期：1-5个交易日
  */
-const db = require('../data/db');
+const { dbGet, dbAll, dbRun, dbBatch } = require('../data/db');
 const dayjs = require('dayjs');
 
 /**
  * 计算单只股票短线信号
- * @param {string} code 股票代码
- * @returns {object} 信号结果
  */
-function calcShortSignal(code) {
+async function calcShortSignal(code) {
   // 取最近120个交易日K线
-  const klines = db.prepare(`
+  const klines = await dbAll(`
     SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC LIMIT 120
-  `).all(code);
+  `, [code]);
   if (klines.length < 30) return null;
 
   // 取最近30个交易日的技术指标
-  const techs = db.prepare(`
+  const techs = await dbAll(`
     SELECT * FROM technical_indicators WHERE code = ? ORDER BY trade_date ASC LIMIT 120
-  `).all(code);
+  `, [code]);
 
   const latest = klines[klines.length - 1];
   const prev = klines[klines.length - 2];
@@ -29,16 +27,14 @@ function calcShortSignal(code) {
   if (!latest || !latestTech) return null;
 
   const signals = [];
-  let score = 50; // 基础分
+  let score = 50;
   const reasons = [];
   const risks = [];
 
-  // 获取收盘价序列
   const closes = klines.map(k => k.close);
   const volumes = klines.map(k => k.volume);
   const highs = klines.map(k => k.high);
   const lows = klines.map(k => k.low);
-  const n = closes.length;
 
   // === 1. 均线多头排列 (15分) ===
   if (latestTech.ma5 && latestTech.ma10 && latestTech.ma20 && latestTech.ma60) {
@@ -50,7 +46,6 @@ function calcShortSignal(code) {
       score -= 15;
       risks.push('均线空头排列');
     }
-    // MA5上穿MA10（金叉）
     if (prevTech && prevTech.ma5 <= prevTech.ma10 && latestTech.ma5 > latestTech.ma10) {
       score += 8;
       reasons.push('MA5上穿MA10（短线金叉）');
@@ -66,7 +61,6 @@ function calcShortSignal(code) {
       score -= 12;
       risks.push('MACD死叉');
     }
-    // MACD柱状图放大（动能增强）
     if (latestTech.macd_bar > 0 && prevTech && latestTech.macd_bar > (prevTech.macd_bar || 0)) {
       score += 5;
       reasons.push('MACD红柱放大（动能增强）');
@@ -92,7 +86,7 @@ function calcShortSignal(code) {
 
   // === 4. 突破N日高点 (13分) ===
   if (highs.length >= 20) {
-    const high20 = Math.max(...highs.slice(-21, -1)); // 不含当日
+    const high20 = Math.max(...highs.slice(-21, -1));
     const high60 = highs.length >= 60 ? Math.max(...highs.slice(-61, -1)) : high20;
     if (latest.close > high20 && latest.pct_chg > 0) {
       score += 8;
@@ -119,7 +113,6 @@ function calcShortSignal(code) {
   }
 
   // === 6. K线形态 (10分) ===
-  // 大阳线（涨幅>5%）
   if (latest.pct_chg > 5) {
     score += 6;
     reasons.push(`大阳线(+${latest.pct_chg.toFixed(1)}%)`);
@@ -127,7 +120,6 @@ function calcShortSignal(code) {
     score -= 8;
     risks.push(`大阴线(${latest.pct_chg.toFixed(1)}%)`);
   }
-  // 长下影线（锤子线，下跌后反弹信号）
   const body = Math.abs(latest.close - latest.open);
   const lowerShadow = Math.min(latest.open, latest.close) - latest.low;
   const upperShadow = latest.high - Math.max(latest.open, latest.close);
@@ -172,10 +164,8 @@ function calcShortSignal(code) {
     }
   }
 
-  // 限定分数范围
   score = Math.max(0, Math.min(100, score));
 
-  // 信号判定
   let signal = 'hold';
   let action = '观望';
   let positionPct = 0;
@@ -185,9 +175,9 @@ function calcShortSignal(code) {
   if (score >= 75 && signals.length === 0) {
     signal = 'buy';
     action = '短线买入';
-    positionPct = 20; // 短线仓位不超过20%
-    stopLoss = latest.close * 0.95; // 短线5%止损
-    targetPrice = latest.close * 1.10; // 10%目标
+    positionPct = 20;
+    stopLoss = latest.close * 0.95;
+    targetPrice = latest.close * 1.10;
   } else if (score >= 65) {
     signal = 'watch';
     action = '关注';
@@ -220,36 +210,37 @@ function calcShortSignal(code) {
 /**
  * 批量计算所有股票短线信号
  */
-function calcAllShortSignals() {
-  const codes = db.prepare(`
+async function calcAllShortSignals() {
+  const codeRows = await dbAll(`
     SELECT DISTINCT code FROM daily_kline
     WHERE trade_date = (SELECT MAX(trade_date) FROM daily_kline)
-  `).all().map(r => r.code);
+  `);
+  const codes = codeRows.map(r => r.code);
 
   const results = [];
   for (const code of codes) {
-    const sig = calcShortSignal(code);
+    const sig = await calcShortSignal(code);
     if (sig && sig.short_score >= 60) results.push(sig);
   }
 
   // 保存到数据库
   const today = dayjs().format('YYYYMMDD');
-  const delStmt = db.prepare(`DELETE FROM short_signals WHERE trade_date = ?`);
-  delStmt.run(today);
+  await dbRun(`DELETE FROM short_signals WHERE trade_date = ?`, [today]);
 
-  const insStmt = db.prepare(`
+  const insertSql = `
     INSERT OR REPLACE INTO short_signals
     (code, trade_date, close, pct_chg, short_score, signal, position_pct, stop_loss, target_price, reasons_json, risks_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertMany = db.transaction((rows) => {
-    for (const r of rows) {
-      insStmt.run(r.code, r.trade_date, r.close, r.pct_chg, r.short_score, r.signal,
-        r.position_pct, r.stop_loss, r.target_price,
-        JSON.stringify(r.reasons), JSON.stringify(r.risks));
-    }
-  });
-  insertMany(results);
+  `;
+  const stmts = results.map(r => ({
+    sql: insertSql,
+    args: [r.code, r.trade_date, r.close, r.pct_chg, r.short_score, r.signal,
+      r.position_pct, r.stop_loss, r.target_price,
+      JSON.stringify(r.reasons), JSON.stringify(r.risks)]
+  }));
+  for (let i = 0; i < stmts.length; i += 200) {
+    await dbBatch(stmts.slice(i, i + 200));
+  }
 
   return results;
 }
@@ -257,9 +248,10 @@ function calcAllShortSignals() {
 /**
  * 获取短线机会列表
  */
-function getShortOpportunities(options = {}) {
+async function getShortOpportunities(options = {}) {
   const { limit = 30, signal = '', minScore = 60 } = options;
-  const today = db.prepare(`SELECT MAX(trade_date) as d FROM short_signals`).get().d;
+  const todayRow = await dbGet(`SELECT MAX(trade_date) as d FROM short_signals`);
+  const today = todayRow?.d;
   if (!today) return [];
 
   let sql = `
@@ -273,7 +265,7 @@ function getShortOpportunities(options = {}) {
   sql += ` ORDER BY s.short_score DESC LIMIT ?`;
   params.push(limit);
 
-  const rows = db.prepare(sql).all(...params);
+  const rows = await dbAll(sql, params);
   return rows.map(r => ({
     ...r,
     reasons: r.reasons_json ? JSON.parse(r.reasons_json) : [],

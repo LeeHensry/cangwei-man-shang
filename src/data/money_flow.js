@@ -4,6 +4,7 @@
  */
 const axios = require('axios');
 const iconv = require('iconv-lite');
+const { dbAll } = require('./db');
 
 const Tencent = axios.create({
   baseURL: 'https://qt.gtimg.cn',
@@ -73,11 +74,11 @@ async function getMarketOverview() {
 /**
  * 个股资金流向信号（用K线量价计算）
  */
-function getStockFlowSignals(db, code) {
-  const klines = db.prepare(`
+async function getStockFlowSignals(code) {
+  const klines = await dbAll(`
     SELECT trade_date, close, volume, pct_chg, high, low FROM daily_kline
     WHERE code = ? ORDER BY trade_date DESC LIMIT 10
-  `).all(code);
+  `, [code]);
   
   if (klines.length < 7) return { flow_score: 50, direction: 'neutral', days_inflow: 0, days_outflow: 0, concentration: 0, signals: [] };
   

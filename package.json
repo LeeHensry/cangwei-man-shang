@@ -14,6 +14,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "axios": "^1.18.1",
     "better-sqlite3": "^13.0.1",
     "cors": "^2.8.6",

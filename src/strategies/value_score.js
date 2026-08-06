@@ -6,7 +6,7 @@
  * 3. 传统老登股降权（银行/基建/石化/钢铁/煤炭/铁路/地产等低ROE+低成长）
  * 4. 成长性权重提升，质量评分更看重ROIC和成长持续性
  */
-const db = require('../data/db');
+const { dbGet, dbAll, dbRun, dbBatch } = require('../data/db');
 const { getFinancialData } = require('../data/finance');
 const { getStockFlowSignals } = require('../data/money_flow');
 const { getCrowdingSignal, calcAllCrowding } = require('../factors/crowding');
@@ -226,28 +226,29 @@ async function syncFinancialData(code) {
     'revenue', 'revenue_yoy', 'net_profit', 'net_profit_yoy', 'debt_ratio',
     'current_ratio', 'ocf', 'eps', 'bps', 'ocf_per_share', 'roic', 'report_type'];
   
-  const placeholders = columns.map(() => '?').join(',');
-  const stmt = db.prepare(`INSERT OR REPLACE INTO financial_indicator
-    (${columns.join(',')}) VALUES (${placeholders})`);
+  const stmts = data.map(r => ({
+    sql: `INSERT OR REPLACE INTO financial_indicator (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`,
+    args: columns.map(c => r[c] ?? null)
+  }));
   
-  for (const r of data) {
-    stmt.run(...columns.map(c => r[c] ?? null));
+  for (let i = 0; i < stmts.length; i += 200) {
+    await dbBatch(stmts.slice(i, i + 200));
   }
   return true;
 }
 
 // ========== 质量评分 v2 ==========
-function calcQualityScore(code) {
-  const finData = db.prepare(`
+async function calcQualityScore(code) {
+  const finData = await dbAll(`
     SELECT * FROM financial_indicator WHERE code = ? ORDER BY report_date DESC LIMIT 12
-  `).all(code);
+  `, [code]);
   
   // 财务数据不足时返回中性分(避免完全没数据导致页面空白)，继续参与估值/技术评分
   if (finData.length < 2) {
     return { score: 50, method: 'no_financial_data', signals: ['⚠️ 财务数据不足，质量分为默认值'] };
   }
   
-  const stockInfo = db.prepare('SELECT name, total_mv FROM stock_info WHERE code = ?').get(code);
+  const stockInfo = await dbGet('SELECT name, total_mv FROM stock_info WHERE code = ?', [code]);
   const name = stockInfo?.name || '';
   const industry = classifyIndustry(code, name);
   
@@ -432,13 +433,13 @@ function calcQualityScore(code) {
 }
 
 // ========== 估值评分 v2 ==========
-function calcValuationScore(code) {
-  const latestVal = db.prepare(`
+async function calcValuationScore(code) {
+  const latestVal = await dbGet(`
     SELECT pe, pe_ttm, pb, total_mv FROM valuation
     WHERE code = ? ORDER BY trade_date DESC LIMIT 1
-  `).get(code);
+  `, [code]);
   
-  const stockInfo = db.prepare('SELECT name FROM stock_info WHERE code = ?').get(code);
+  const stockInfo = await dbGet('SELECT name FROM stock_info WHERE code = ?', [code]);
   const name = stockInfo?.name || '';
   const industry = classifyIndustry(code, name);
   
@@ -511,9 +512,9 @@ function calcValuationScore(code) {
   
   // ---- 历史价格百分位（满分40，行业权重调整）----
   const vw = industry.group.valueWeight || 1.0;
-  const klines = db.prepare(`
+  const klines = await dbAll(`
     SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 750
-  `).all(code);
+  `, [code]);
   
   let priceScore = 20;
   let pricePercentile = null;
@@ -541,10 +542,10 @@ function calcValuationScore(code) {
 }
 
 // 备用：纯价格位置
-function estimateValuationFromPrice(code) {
-  const klines = db.prepare(`
+async function estimateValuationFromPrice(code) {
+  const klines = await dbAll(`
     SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 500
-  `).all(code);
+  `, [code]);
   if (klines.length < 60) return { score: 50, method: 'insufficient_data' };
   const closes = klines.map(k => k.close);
   const current = closes[0];
@@ -554,12 +555,12 @@ function estimateValuationFromPrice(code) {
 }
 
 // ========== 技术评分（不变）==========
-function calcTechnicalScore(code) {
-  const recent = db.prepare(`
+async function calcTechnicalScore(code) {
+  const recent = await dbAll(`
     SELECT k.trade_date, k.close, k.pct_chg, t.* FROM daily_kline k
     LEFT JOIN technical_indicators t USING(code, trade_date)
     WHERE k.code = ? ORDER BY k.trade_date DESC LIMIT 30
-  `).all(code);
+  `, [code]);
   
   if (recent.length < 25) return { score: 50, method: 'insufficient_data' };
   
@@ -762,9 +763,10 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
 // ========== 批量评分 ==========
 async function scoreAllStocks(syncFinance = true, includeCrowding = true, settings = null) {
   // 优先从股票池取代码，fallback到stock_info
-  let codes = db.prepare('SELECT code, name FROM stock_pool WHERE in_pool = 1').all();
+  let poolCodes = await dbAll('SELECT code, name FROM stock_pool WHERE in_pool = 1');
+  let codes = poolCodes;
   if (codes.length === 0) {
-    codes = db.prepare('SELECT code, name FROM stock_info WHERE is_st = 0').all();
+    codes = await dbAll('SELECT code, name FROM stock_info WHERE is_st = 0');
   }
   const today = dayjs().format('YYYYMMDD');
   const results = [];
@@ -776,9 +778,8 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
   if (includeCrowding) {
     try {
       console.log('  计算拥挤度因子...');
-      // 把所有拥挤度先算出来缓存
-      calcAllCrowding();
-      const crowdRows = db.prepare('SELECT * FROM crowding_score WHERE trade_date = ?').all(today);
+      await calcAllCrowding();
+      const crowdRows = await dbAll('SELECT * FROM crowding_score WHERE trade_date = ?', [today]);
       for (const r of crowdRows) crowdingCache[r.code] = r;
       console.log(`  拥挤度计算完成，缓存 ${Object.keys(crowdingCache).length} 只`);
     } catch(e) {
@@ -790,19 +791,20 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
     const { code, name } = codes[i];
     try {
       if (syncFinance) {
-        const hasFin = db.prepare('SELECT COUNT(*) as c FROM financial_indicator WHERE code = ?').get(code).c;
+        const hasFinRow = await dbGet('SELECT COUNT(*) as c FROM financial_indicator WHERE code = ?', [code]);
+        const hasFin = hasFinRow?.c || 0;
         if (hasFin === 0) {
           await syncFinancialData(code);
           await new Promise(r => setTimeout(r, 150));
         }
       }
       
-      const quality = calcQualityScore(code);
+      const quality = await calcQualityScore(code);
       if (!quality) continue;
-      const valuation = calcValuationScore(code);
-      const technical = calcTechnicalScore(code);
-      // 资金因子：计算近期资金流向和抱团度
-      const flow = getStockFlowSignals(db, code);
+      const valuation = await calcValuationScore(code);
+      const technical = await calcTechnicalScore(code);
+      // 资金因子
+      const flow = await getStockFlowSignals(code);
       // 资金流入给技术面加分，流出减分
       if (flow.direction === 'inflow') technical.score = Math.min(100, technical.score + 8);
       else if (flow.direction === 'slight_inflow') technical.score = Math.min(100, technical.score + 4);
@@ -831,7 +833,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
       
       const total = calcTotalScore(code, quality, valuation, technical, crowdingResult, settings);
       
-      const latestKline = db.prepare('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1').get(code);
+      const latestKline = await dbGet('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [code]);
       const currentPrice = latestKline?.close;
       
       let targetPrice = null, stopLoss = null;
@@ -888,18 +890,21 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
     'technical_score', 'total_score', 'signal', 'current_price', 'target_price', 'stop_loss',
     'position_pct', 'quality_detail', 'quality_latest', 'valuation_detail', 'technical_detail', 'reason'];
   
-  const placeholders = columns.map(() => '?').join(',');
-  const stmt = db.prepare(`INSERT OR REPLACE INTO stock_score
-    (${columns.join(',')}, fund_score, sentiment_score, crowding_score, crowding_level) VALUES (${placeholders}, 0, 0, ?, ?)`);
+  const insertSql = `INSERT OR REPLACE INTO stock_score
+    (${columns.join(',')}, fund_score, sentiment_score, crowding_score, crowding_level) VALUES (${columns.map(()=>'?').join(',')}, 0, 0, ?, ?)`;
   
-  const insertMany = db.transaction((rows) => {
-    for (const r of rows) stmt.run(
+  const stmts = results.map(r => ({
+    sql: insertSql,
+    args: [
       ...columns.map(c => r[c] ?? null),
       r.crowding_score ?? null,
       r.crowding_level ?? null
-    );
-  });
-  insertMany(results);
+    ]
+  }));
+  
+  for (let i = 0; i < stmts.length; i += 200) {
+    await dbBatch(stmts.slice(i, i + 200));
+  }
   
   console.log(`\n✅ 评分(v2+拥挤度)完成，共 ${results.length} 只`);
   return results;

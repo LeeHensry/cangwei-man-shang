@@ -6,28 +6,14 @@
  * - 选出 top 200 只作为重点关注池，后续评分/信号只对这200只做深度分析
  * - 用户自选股票始终入池，不受筛选淘汰
  */
-const db = require('./db');
+const { dbGet, dbAll, dbRun, dbBatch } = require('./db');
 const ds = require('./datasources');
 const dayjs = require('dayjs');
 
 // 内置大中盘股票池（约970只，沪市主板/科创板/深市主板/创业板龙头活跃股）
 const BUILTIN_UNIVERSE = require('../../data/stock_universe.json');
 
-// 股票池表
-db.exec(`
-CREATE TABLE IF NOT EXISTS stock_pool (
-  code TEXT PRIMARY KEY,
-  name TEXT,
-  in_pool INTEGER DEFAULT 1,       -- 1=在池 0=淘汰
-  is_manual INTEGER DEFAULT 0,     -- 1=用户手动添加（永不淘汰）
-  pool_score REAL,                 -- 入池综合分
-  pool_reason TEXT,                -- 入池原因
-  score_volume REAL,               -- 流动性分
-  score_momentum REAL,             -- 动量分
-  last_trade_date TEXT,
-  updated_at TEXT,
-  in_pool_date TEXT
-)`);
+// 注意：建表已由 db.js 统一处理，此处不再执行 db.exec
 
 /**
  * 执行股票池更新（每周一执行）
@@ -38,8 +24,10 @@ async function updateStockPool(targetSize = 200) {
   const t0 = Date.now();
 
   // 1. 构建待扫描股票名单：内置universe + 已有池内股票（含手动添加）+ portfolio里的股票
-  const manualCodes = db.prepare(`SELECT code, name FROM stock_pool WHERE is_manual = 1`).all().map(r => r.code);
-  const portfolioCodes = db.prepare(`SELECT DISTINCT code FROM portfolio WHERE status='holding'`).all().map(r => r.code);
+  const manualRows = await dbAll(`SELECT code, name FROM stock_pool WHERE is_manual = 1`);
+  const manualCodes = manualRows.map(r => r.code);
+  const portfolioRows = await dbAll(`SELECT DISTINCT code FROM portfolio WHERE status='holding'`);
+  const portfolioCodes = portfolioRows.map(r => r.code);
   const universeSet = new Set([...BUILTIN_UNIVERSE, ...manualCodes, ...portfolioCodes]);
   // 保证所有代码格式正确（sh/sz前缀）
   const allCodes = [...universeSet].map(toTencentCode);
@@ -125,29 +113,36 @@ async function updateStockPool(targetSize = 200) {
 
   // 5. 写入数据库（先标记不在池的为0，再插入/更新池内的）
   const poolCodes = new Set(finalPool.map(s => s.code));
-  const existingAll = db.prepare(`SELECT code FROM stock_pool`).all().map(r => r.code);
-  const existSet = new Set(existingAll);
+  const existingAll = await dbAll(`SELECT code FROM stock_pool`);
+  const existSet = new Set(existingAll.map(r => r.code));
 
-  const markOut = db.prepare(`UPDATE stock_pool SET in_pool = 0, updated_at = ? WHERE code NOT IN (${finalPool.map(()=>'?').join(',')})`);
-  if (finalPool.length > 0) {
-    markOut.run(dayjs().format('YYYY-MM-DD HH:mm:ss'), ...finalPool.map(s => s.code));
-  }
-
-  const upsert = db.prepare(`INSERT OR REPLACE INTO stock_pool
-    (code, name, in_pool, is_manual, pool_score, pool_reason, score_volume, score_momentum,
-     last_trade_date, updated_at, in_pool_date)
-    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code = ?), ?))`);
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
   const todayShort = dayjs().format('YYYY-MM-DD');
-  const tx = db.transaction(stocks => {
-    for (const s of stocks) {
-      const reason = s.is_manual ? '手动/持仓' :
-        `流动性${s.vol_score} 动量${s.mom_score} 市值${s.mv_score}`;
-      upsert.run(s.code, s.name, s.is_manual, s.score, reason, s.vol_score, s.mom_score,
-                today, now, s.code, todayShort);
-    }
+
+  // 标记不在池的股票
+  if (finalPool.length > 0) {
+    const placeholders = finalPool.map(() => '?').join(',');
+    await dbRun(`UPDATE stock_pool SET in_pool = 0, updated_at = ? WHERE code NOT IN (${placeholders})`, [now, ...finalPool.map(s => s.code)]);
+  }
+
+  // 批量插入/更新池内股票
+  const batchStmts = finalPool.map(s => {
+    const reason = s.is_manual ? '手动/持仓' :
+      `流动性${s.vol_score} 动量${s.mom_score} 市值${s.mv_score}`;
+    return {
+      sql: `INSERT OR REPLACE INTO stock_pool
+        (code, name, in_pool, is_manual, pool_score, pool_reason, score_volume, score_momentum,
+         last_trade_date, updated_at, in_pool_date)
+        VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code = ?), ?))`,
+      args: [s.code, s.name, s.is_manual, s.score, reason, s.vol_score, s.mom_score,
+                today, now, s.code, todayShort]
+    };
   });
-  tx(finalPool);
+
+  // 分批处理
+  for (let i = 0; i < batchStmts.length; i += 200) {
+    await dbBatch(batchStmts.slice(i, i + 200));
+  }
 
   console.log(`[pool] 股票池更新完成，共 ${finalPool.length} 只（手动${manualStocks.length}只 + 自动${autoPool.length}只），耗时 ${((Date.now()-t0)/1000).toFixed(1)}s`);
   return { total: finalPool.length, manual: manualStocks.length, auto: autoPool.length, elapsed: Date.now()-t0 };
@@ -156,20 +151,21 @@ async function updateStockPool(targetSize = 200) {
 /**
  * 获取当前股票池代码列表（返回纯6位码，不带sh/sz前缀，API调用时再转）
  */
-function getPoolCodes() {
-  return db.prepare(`SELECT code, name FROM stock_pool WHERE in_pool = 1 ORDER BY pool_score DESC`).all().map(r => r.code);
+async function getPoolCodes() {
+  const rows = await dbAll(`SELECT code, name FROM stock_pool WHERE in_pool = 1 ORDER BY pool_score DESC`);
+  return rows.map(r => r.code);
 }
 
 /**
  * 添加股票到股票池（用户手动/搜索添加）
  */
-function addToPool(code, name, isManual = true) {
+async function addToPool(code, name, isManual = true) {
   const sixCode = toSixCode(code);
   const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  db.prepare(`INSERT OR REPLACE INTO stock_pool
+  await dbRun(`INSERT OR REPLACE INTO stock_pool
     (code, name, in_pool, is_manual, pool_score, pool_reason, updated_at, in_pool_date)
-    VALUES (?, ?, 1, ?, 99, '手动添加', ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code=?), ?))`)
-    .run(sixCode, name || code, isManual ? 1 : 0, now, sixCode, dayjs().format('YYYY-MM-DD'));
+    VALUES (?, ?, 1, ?, 99, '手动添加', ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code=?), ?))`,
+    [sixCode, name || code, isManual ? 1 : 0, now, sixCode, dayjs().format('YYYY-MM-DD')]);
   return sixCode;
 }
 

@@ -2,10 +2,10 @@
  * 简单回测引擎 v2
  * 均线趋势策略：MA20>MA60多头排列买入，月度调仓，止损止盈
  */
-const db = require('../data/db');
+const { dbGet, dbAll } = require('../data/db');
 const dayjs = require('dayjs');
 
-function runBacktest(params) {
+async function runBacktest(params) {
   const {
     startDate,
     endDate = dayjs().format('YYYYMMDD'),
@@ -18,19 +18,20 @@ function runBacktest(params) {
   } = params;
 
   // 如果没有指定startDate，自动检测可用数据范围
-  const dateRange = db.prepare(`
+  const dateRange = await dbGet(`
     SELECT MIN(trade_date) as min_d, MAX(trade_date) as max_d, COUNT(DISTINCT trade_date) as cnt
     FROM daily_kline
-  `).get();
+  `);
 
   const actualStart = startDate || dateRange.min_d;
   const actualEnd = endDate || dateRange.max_d;
 
-  const tradeDates = db.prepare(`
+  const tradeDateRows = await dbAll(`
     SELECT DISTINCT trade_date FROM daily_kline 
     WHERE trade_date >= ? AND trade_date <= ? 
     ORDER BY trade_date ASC
-  `).all(actualStart, actualEnd).map(r => r.trade_date);
+  `, [actualStart, actualEnd]);
+  const tradeDates = tradeDateRows.map(r => r.trade_date);
 
   // 根据实际数据量自动调整均线参数
   const availableDays = tradeDates.length;
@@ -39,7 +40,6 @@ function runBacktest(params) {
   let dataNote = '';
 
   if (availableDays < maLong + 20) {
-    // 数据不足，自动降级参数
     if (availableDays >= 40) {
       effMaShort = 5;
       effMaLong = 10;
@@ -60,19 +60,21 @@ function runBacktest(params) {
 
   // 股票池（有足够历史数据的非ST股）
   const requiredKlines = Math.min(effMaLong + 15, availableDays - 5);
-  const stockCodes = db.prepare(`
+  const stockCodeRows = await dbAll(`
     SELECT DISTINCT dk.code FROM daily_kline dk
     JOIN stock_info si ON dk.code = si.code
     WHERE si.is_st = 0
     GROUP BY dk.code HAVING COUNT(*) >= ?
-  `).all(requiredKlines).map(r => r.code);
+  `, [requiredKlines]);
+  const stockCodes = stockCodeRows.map(r => r.code);
 
   if (stockCodes.length < 10) {
     return { error: `有效股票数量不足（${stockCodes.length}只），需要至少10只。请先执行数据同步。` };
   }
 
+  const nameRows = await dbAll('SELECT code, name FROM stock_info');
   const nameMap = {};
-  db.prepare('SELECT code, name FROM stock_info').all().forEach(r => { nameMap[r.code] = r.name; });
+  nameRows.forEach(r => { nameMap[r.code] = r.name; });
 
   let cash = initialCapital;
   let positions = {};
@@ -86,11 +88,12 @@ function runBacktest(params) {
     const date = tradeDates[di];
     const monthKey = date.substring(0, 6);
 
-    // 当日价格
+    // 当日价格 — 批量查所有股票
     const placeholders = stockCodes.map(()=>'?').join(',');
-    const priceRows = db.prepare(
-      `SELECT code, close, pct_chg FROM daily_kline WHERE trade_date=? AND code IN (${placeholders})`
-    ).all(date, ...stockCodes);
+    const priceRows = await dbAll(
+      `SELECT code, close, pct_chg FROM daily_kline WHERE trade_date=? AND code IN (${placeholders})`,
+      [date, ...stockCodes]
+    );
     const priceMap = {};
     for (const p of priceRows) priceMap[p.code] = p;
 
@@ -133,12 +136,12 @@ function runBacktest(params) {
     if (rebalanceKey !== lastMonth) {
       lastMonth = rebalanceKey;
       const candidates = [];
-      // 扫描股票池
       const scanLimit = Math.min(stockCodes.length, 200);
       for (const code of stockCodes.slice(0, scanLimit)) {
-        const ks = db.prepare(
-          `SELECT close FROM daily_kline WHERE code=? AND trade_date<=? ORDER BY trade_date DESC LIMIT ${effMaLong+5}`
-        ).all(code, date);
+        const ks = await dbAll(
+          `SELECT close FROM daily_kline WHERE code=? AND trade_date<=? ORDER BY trade_date DESC LIMIT ?`,
+          [code, date, effMaLong + 5]
+        );
         if (ks.length < effMaLong) continue;
         const closes = ks.map(k=>k.close).reverse();
         const maS = closes.slice(-effMaShort).reduce((a,b)=>a+b,0)/effMaShort;
@@ -206,13 +209,13 @@ function runBacktest(params) {
   try {
     const sampleCodes = stockCodes.slice(0, 50);
     const ph = sampleCodes.map(()=>'?').join(',');
-    const b = db.prepare(`SELECT AVG(last_c/first_c-1)*100 ret FROM (
+    const b = await dbGet(`SELECT AVG(last_c/first_c-1)*100 ret FROM (
       SELECT code,
         (SELECT close FROM daily_kline WHERE code=d.code AND trade_date>=? ORDER BY trade_date ASC LIMIT 1) first_c,
         (SELECT close FROM daily_kline WHERE code=d.code AND trade_date<=? ORDER BY trade_date DESC LIMIT 1) last_c
       FROM (SELECT DISTINCT code FROM daily_kline WHERE trade_date BETWEEN ? AND ? AND code IN (${ph})) d
       WHERE first_c>0 AND last_c>0
-    )`).get(startDate, endDate, startDate, endDate, ...sampleCodes);
+    )`, [startDate, endDate, startDate, endDate, ...sampleCodes]);
     benchmarkReturn = b?.ret || 0;
   } catch(e) {}
 
