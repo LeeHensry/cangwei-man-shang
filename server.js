@@ -609,14 +609,107 @@ app.get('/', serveIndex);
 app.get(/^\/(?!api|assets|crowding-radar)[^.]*$/, serveIndex);
 
 // ========== 定时任务 ==========
+
+// 提取同步逻辑为可复用函数（cron和手动触发共用）
+async function runAutoSync(mode = 'incremental') {
+  if (syncRunning) { console.log('[cron] 同步正在进行中，跳过'); return; }
+  syncRunning = true;
+  try {
+    console.log(`[cron] 开始${mode === 'full' ? '全量' : '增量'}数据同步...`);
+    const currentSettings = userSettings;
+    let codes = await stockPool.getPoolCodes();
+    if (codes.length === 0) { const infoRows = await dbAll('SELECT code FROM stock_info'); codes = infoRows.map(r => r.code).filter(c => /^\d{6}$/.test(c)); }
+    if (codes.length === 0) { console.log('[cron] 无股票代码，跳过'); return; }
+
+    // 1. 拉取实时行情
+    let quotes = [];
+    try { quotes = await tq.getQuickStockList(codes.slice(0, 250)); } catch(e) { console.log('[cron] 行情拉取失败:', e.message); }
+    const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const today = dayjs().format('YYYYMMDD');
+    const infoData = quotes.filter(q=>q.code&&q.name).map(q => ({ code:q.code, name:q.name, market:q.market||(q.code.startsWith('6')?'SH':'SZ'), is_st:q.is_st||(q.name&&q.name.includes('ST')?1:0), total_mv:q.total_mv, circ_mv:q.circ_mv }));
+    if (infoData.length > 0) await dbBatch(infoData.map(r => ({ sql: `INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`, args: [r.code, r.name, r.market, r.is_st, r.total_mv, r.circ_mv, nowStr] })));
+    const valData = quotes.filter(q=>q.code&&q.pe!=null);
+    if (valData.length > 0) await dbBatch(valData.map(q => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [q.code, today, q.pe] })));
+    console.log(`[cron] 行情更新: ${quotes.length}支`);
+
+    // 2. 拉取K线
+    const klineHistoryDays = mode === 'full' ? 1100 : 30;
+    const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
+    const klineEnd = dayjs().format('YYYY-MM-DD');
+    let klineCount = 0;
+    for (let i = 0; i < codes.length; i++) {
+      try {
+        const klines = await tq.getDailyKline(codes[i], klineStart, klineEnd);
+        if (klines.length > 0) {
+          for (let j = 0; j < klines.length; j += 200) {
+            await dbBatch(klines.slice(j, j+200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
+          }
+          klineCount += klines.length;
+        }
+      } catch(e) {}
+      await tq.sleep(mode === 'full' ? 120 : 60);
+    }
+    console.log(`[cron] K线更新: ${klineCount}条`);
+
+    // 3. 计算技术指标
+    const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
+    const allCodes = allCodeRows.map(r => r.code);
+    let indCount = 0;
+    for (let i = 0; i < allCodes.length; i++) {
+      const ks = await dbAll('SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC', [allCodes[i]]);
+      if (ks.length < 25) continue;
+      const inds = calcAllIndicators(ks);
+      const validInds = inds.filter(r => r.ma5 !== null);
+      for (let j = 0; j < validInds.length; j += 200) {
+        await dbBatch(validInds.slice(j, j+200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [allCodes[i], r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+      }
+      indCount++;
+    }
+    console.log(`[cron] 技术指标: ${indCount}支`);
+
+    // 4. 评分
+    await scoreAllStocks(false, true, currentSettings);
+    console.log('[cron] 评分完成');
+
+    // 5. 短线信号
+    try { await calcAllShortSignals(); } catch(e) { console.log('[cron] 短线信号失败:', e.message); }
+
+    // 6. 拥挤度
+    try { await calcAllCrowding(); } catch(e) { console.log('[cron] 拥挤度失败:', e.message); }
+
+    console.log(`[cron] ✅ ${mode === 'full' ? '全量' : '增量'}同步完成`);
+  } catch(e) {
+    console.error('[cron] 同步失败:', e.message);
+  } finally {
+    syncRunning = false;
+  }
+}
+
+// 周一凌晨更新股票池
 cron.schedule('30 0 * * 1', async () => {
   console.log('[cron] 周一00:30，开始更新股票池...');
   try { const r = await stockPool.updateStockPool(200); console.log('[cron] 股票池更新完成:', r); } catch(e) { console.log('[cron] 股票池更新失败:', e.message); }
 });
-cron.schedule('0 10 * * 1-5', () => { console.log('10:00 定时更新'); });
-cron.schedule('30 11 * * 1-5', () => { console.log('11:30 定时更新'); });
-cron.schedule('0 14 * * 1-5', () => { console.log('14:00 定时更新'); });
-cron.schedule('30 15 * * 1-5', () => { console.log('15:30 收盘全量更新'); });
+
+// 工作日盘中增量同步（10:00开盘后、11:30午盘、14:00下午盘）
+cron.schedule('0 10 * * 1-5', () => runAutoSync('incremental'));
+cron.schedule('30 11 * * 1-5', () => runAutoSync('incremental'));
+cron.schedule('0 14 * * 1-5', () => runAutoSync('incremental'));
+
+// 收盘后全量同步（15:30）
+cron.schedule('30 15 * * 1-5', () => runAutoSync('full'));
+
+// 防休眠：每10分钟自ping，保持Render免费版不进入休眠
+// 这样工作日盘中cron任务才能按时触发
+setInterval(async () => {
+  try {
+    const http = require('http');
+    const port = process.env.PORT || 3001;
+    http.get(`http://127.0.0.1:${port}/api/version`, (res) => {
+      res.resume();
+    }).on('error', () => {});
+  } catch(e) {}
+}, 10 * 60 * 1000);
 
 // ========== 启动 ==========
 const PORT = process.env.PORT || 3001;

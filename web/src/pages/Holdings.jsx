@@ -9,59 +9,9 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { getPortfolio, addHolding, deleteHolding, getOverview } from '../api';
+import { getPortfolio, addHolding, deleteHolding, getOverview, getSettings, saveSettings } from '../api';
 
 const { Title, Text } = Typography;
-
-// 本金配置本地存储
-const CAPITAL_KEY = 'cwms_total_capital';
-function loadCapital() {
-  try {
-    const v = localStorage.getItem(CAPITAL_KEY);
-    return v ? parseFloat(v) : 1000000;
-  } catch(e) { return 1000000; }
-}
-function saveCapital(v) {
-  try { localStorage.setItem(CAPITAL_KEY, String(v)); } catch(e) {}
-}
-
-// ===== 持仓本地备份（防止Render免费版重启丢失数据）=====
-const PORTFOLIO_BACKUP_KEY = 'cwms_portfolio_backup';
-
-function savePortfolioBackup(holdings) {
-  try {
-    // 只备份必要字段，不带计算字段
-    const backup = holdings.map(h => ({
-      code: h.code, name: h.name, buy_price: h.buy_price, shares: h.shares,
-      buy_date: h.buy_date, strategy: h.strategy || 'value',
-    }));
-    localStorage.setItem(PORTFOLIO_BACKUP_KEY, JSON.stringify(backup));
-  } catch(e) {}
-}
-
-async function restoreFromBackup() {
-  try {
-    const raw = localStorage.getItem(PORTFOLIO_BACKUP_KEY);
-    if (!raw) return 0;
-    const backup = JSON.parse(raw);
-    if (!Array.isArray(backup) || backup.length === 0) return 0;
-    // 检查后端是否已有数据
-    const current = await getPortfolio();
-    if (current.holdings && current.holdings.length > 0) return 0; // 后端有数据，不需要恢复
-    // 后端空，逐条恢复
-    let restored = 0;
-    for (const h of backup) {
-      try {
-        await addHolding(h);
-        restored++;
-      } catch(e) {}
-    }
-    return restored;
-  } catch(e) {
-    return 0;
-  }
-}
-
 
 const signalMeta = {
   buy: { label: '买入', color: 'var(--up)', bg: 'var(--up-soft)' },
@@ -77,6 +27,8 @@ function PnLText({ value, suffix = '%', colored = true }) {
   return <Text style={{ color: colored ? color : '#3A3A3C', fontWeight: 600, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>{sign}{value.toFixed(2)}{suffix}</Text>;
 }
 
+const DEFAULT_CAPITAL = 1000000;
+
 export default function Holdings() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,27 +37,27 @@ export default function Holdings() {
   const [form] = Form.useForm();
   const [capitalForm] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
-  const [totalCapital, setTotalCapital] = useState(loadCapital());
+  const [totalCapital, setTotalCapital] = useState(DEFAULT_CAPITAL);
   const [suggestedPos, setSuggestedPos] = useState(60);
   const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
     try {
-      // 先尝试从本地备份恢复（后端空时）
-      const restored = await restoreFromBackup();
-      if (restored > 0) {
-        message.success(`已从本地备份恢复 ${restored} 只持仓`, 3);
-      }
       const d = await getPortfolio();
       setData(d);
-      // 每次加载成功都备份一次
-      if (d.holdings) savePortfolioBackup(d.holdings);
       // 获取市场温度建议仓位
       try {
         const overview = await getOverview();
         if (overview?.temperature?.suggested_position) {
           setSuggestedPos(overview.temperature.suggested_position);
+        }
+      } catch(e) {}
+      // 从后端加载本金
+      try {
+        const settings = await getSettings();
+        if (settings.total_capital) {
+          setTotalCapital(parseFloat(settings.total_capital));
         }
       } catch(e) {}
     } catch(e) {
@@ -151,11 +103,13 @@ export default function Holdings() {
     try {
       const vals = await capitalForm.validateFields();
       setTotalCapital(vals.capital);
-      saveCapital(vals.capital);
-      message.success('本金已更新');
+      // 保存到后端 app_settings
+      await saveSettings({ total_capital: String(vals.capital) });
+      message.success('本金已保存到云端');
       setCapitalModalOpen(false);
     } catch(e) {
       if (e?.errorFields) return;
+      message.error('保存失败');
     }
   };
 
@@ -391,7 +345,7 @@ export default function Holdings() {
               formatter={v => v ? `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
               parser={v => v.replace(/,/g, '')} />
           </Form.Item>
-          <Text type="secondary" style={{ fontSize: 12 }}>用于计算总资产、仓位比例和总收益率。数据保存在本地浏览器中。</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>用于计算总资产、仓位比例和总收益率。数据保存在云端数据库，换设备不丢失。</Text>
         </Form>
       </Modal>
     </div>
