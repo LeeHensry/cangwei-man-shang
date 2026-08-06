@@ -19,3 +19,4 @@ tunnel.sh
 web/node_modules/
 web/dist/
 data/ds_config.json
+server.js.bak
