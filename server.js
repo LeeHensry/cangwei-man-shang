@@ -22,7 +22,7 @@ if (!process.env.TURSO_AUTH_TOKEN) {
   })();
 }
 
-const { dbGet, dbAll, dbRun, dbBatch, dbIsReady, useTurso } = require('./src/data/db');
+const { dbGet, dbAll, dbRun, dbBatch, dbIsReady, useTurso, client } = require('./src/data/db');
 const stockPool = require('./src/data/stock_pool');
 const ds = require('./src/data/datasources');
 const tq = ds;
@@ -410,18 +410,24 @@ app.get('/api/version', (req, res) => {
   res.json({ version, name: '仓位满上 TopUp', build_time: new Date().toISOString() });
 });
 
-// 诊断：检查环境变量（临时，修完即删）
-app.get('/api/debug/env', (req, res) => {
+// 诊断：检查环境变量和DB连接（临时，修完即删）
+app.get('/api/debug/env', async (req, res) => {
   const t = process.env.TURSO_AUTH_TOKEN || '';
   const u = process.env.TURSO_DATABASE_URL || '';
+  let dbTest = { ok: false, error: null, count: null };
+  try {
+    const r = await dbGet('SELECT COUNT(*) as cnt FROM stock_info');
+    dbTest = { ok: true, count: r?.cnt, useTurso };
+  } catch(e) {
+    dbTest = { ok: false, error: e.message, useTurso };
+  }
   res.json({
     hasToken: !!t,
     tokenLen: t.length,
     tokenPrefix: t.substring(0, 30),
-    tokenSuffix: t.substring(t.length - 20),
     url: u,
-    urlLen: u.length,
     nodeEnv: process.env.NODE_ENV || '(none)',
+    dbTest,
   });
 });
 
