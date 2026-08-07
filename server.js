@@ -410,6 +410,21 @@ app.get('/api/version', (req, res) => {
   res.json({ version, name: '仓位满上 TopUp', build_time: new Date().toISOString() });
 });
 
+// 诊断：检查环境变量（临时，修完即删）
+app.get('/api/debug/env', (req, res) => {
+  const t = process.env.TURSO_AUTH_TOKEN || '';
+  const u = process.env.TURSO_DATABASE_URL || '';
+  res.json({
+    hasToken: !!t,
+    tokenLen: t.length,
+    tokenPrefix: t.substring(0, 30),
+    tokenSuffix: t.substring(t.length - 20),
+    url: u,
+    urlLen: u.length,
+    nodeEnv: process.env.NODE_ENV || '(none)',
+  });
+});
+
 // ========== 期权模块 ==========
 const { publicClient: deribit } = require('./src/options/deribit');
 const { priceOption, impliedVolatility, timeToExpiry } = require('./src/options/pricing');
