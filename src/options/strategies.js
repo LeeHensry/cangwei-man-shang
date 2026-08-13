@@ -115,7 +115,7 @@ function coveredCall(params) {
 
     // 选择最接近目标价的虚值call
     const selectedCall = calls[0];
-    const premiumPct = (selectedCall.bidPrice / currentPrice) * 100;
+    const premiumPct = selectedCall.bidPrice * 100; // Deribit价格以BTC计，0.001 = 0.1% of 1 BTC
     const annualizedReturn = (premiumPct / expiry.daysToExpiry) * 365;
 
     signals.push({
@@ -164,7 +164,7 @@ function protectivePut(params) {
     const selectedPut = findNearestOption(puts, targetStrike);
     if (!selectedPut || selectedPut.askPrice <= 0) continue;
 
-    const costPct = (selectedPut.askPrice / currentPrice) * 100;
+    const costPct = selectedPut.askPrice * 100; // Deribit以BTC计，0.01 = 1%
     const protectedPrice = selectedPut.strike;
     const maxLoss = ((currentPrice - protectedPrice) / currentPrice * 100) + costPct;
 
@@ -220,7 +220,7 @@ function shortStrangle(params) {
     const callPremium = shortCall.bidPrice;
     const putPremium = shortPut.bidPrice;
     const totalPremium = callPremium + putPremium;
-    const totalPremiumPct = (totalPremium / currentPrice) * 100;
+    const totalPremiumPct = totalPremium * 100;
     const totalPremiumUSD = totalPremium * currentPrice;
 
     signals.push({
@@ -271,7 +271,7 @@ function longStraddle(params) {
     if (!atmCall || !atmPut) continue;
 
     const totalCost = atmCall.askPrice + atmPut.askPrice;
-    const totalCostPct = (totalCost / currentPrice) * 100;
+    const totalCostPct = totalCost * 100;
     const totalCostUSD = totalCost * currentPrice;
     const moveNeeded = totalCostPct; // 需要涨/跌超过这个百分比才盈利
 

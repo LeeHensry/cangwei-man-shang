@@ -256,8 +256,8 @@ app.post('/api/sync', async (req, res) => {
       }
       emitProgress('indicator', `技术指标计算完成：${indCount} 支`, indStartPct + 12);
       const scoreStartPct = indStartPct + 14;
-      emitProgress('score', '计算多因子评分（使用当前策略配置）...', scoreStartPct);
-      await scoreAllStocks(false, true, currentSettings);
+      emitProgress('score', '计算多因子评分（含财务数据补全）...', scoreStartPct);
+      await scoreAllStocks(true, true, currentSettings);
       emitProgress('score', '评分完成', scoreStartPct + 10);
       const shortStartPct = scoreStartPct + 10;
       emitProgress('short', '计算短线信号...', shortStartPct);
@@ -394,7 +394,7 @@ app.post('/api/settings', async (req, res) => {
   setTimeout(async () => {
     try {
       console.log('[settings] 设置已变更，重新计算评分...');
-      await scoreAllStocks(false, true, userSettings);
+      await scoreAllStocks(true, true, userSettings);
       try { await calcAllCrowding(); } catch(e) {}
       try { await calcAllShortSignals(); } catch(e) {}
       console.log('[settings] 重新评分完成');
@@ -410,27 +410,6 @@ app.get('/api/version', (req, res) => {
   res.json({ version, name: '仓位满上 TopUp', build_time: new Date().toISOString() });
 });
 
-// 诊断：检查环境变量和DB连接（临时，修完即删）
-app.get('/api/debug/env', async (req, res) => {
-  const t = process.env.TURSO_AUTH_TOKEN || '';
-  const u = process.env.TURSO_DATABASE_URL || '';
-  let dbTest = { ok: false, error: null, count: null };
-  try {
-    const r = await dbGet('SELECT COUNT(*) as cnt FROM stock_info');
-    dbTest = { ok: true, count: r?.cnt, useTurso };
-  } catch(e) {
-    dbTest = { ok: false, error: e.message, useTurso };
-  }
-  res.json({
-    hasToken: !!t,
-    tokenLen: t.length,
-    tokenPrefix: t.substring(0, 30),
-    url: u,
-    nodeEnv: process.env.NODE_ENV || '(none)',
-    dbTest,
-  });
-});
-
 // ========== 期权模块 ==========
 const { publicClient: deribit } = require('./src/options/deribit');
 const { priceOption, impliedVolatility, timeToExpiry } = require('./src/options/pricing');
@@ -443,7 +422,9 @@ const { runAllBacktests } = require('./src/options/backtest');
 app.get('/api/options/chain', async (req, res) => {
   try {
     const currency = (req.query.currency || 'BTC').toUpperCase();
-    const result = await deribit.getOptionChainSummary(currency);
+    const expiry = req.query.expiry ? parseInt(req.query.expiry) : null;
+    const maxExp = parseInt(req.query.max || '6');
+    const result = await deribit.getOptionChainSummary(currency, expiry, maxExp);
     res.json(result);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -455,7 +436,7 @@ app.get('/api/options/signals', async (req, res) => {
     const bias = req.query.bias || 'neutral'; // bullish/bearish/neutral
     const volRegime = req.query.volatility || 'normal'; // high/low/normal
 
-    const chain = await deribit.getOptionChainSummary(currency);
+    const chain = await deribit.getOptionChainSummary(currency, null, 10);
     const currentPrice = chain.indexPrice;
     // 取最近3个到期日做信号
     const signals = scanAllSignals({
@@ -786,8 +767,8 @@ async function runAutoSync(mode = 'incremental') {
     }
     console.log(`[cron] 技术指标: ${indCount}支`);
 
-    // 4. 评分
-    await scoreAllStocks(false, true, currentSettings);
+    // 4. 评分（syncFinance=true：仅对缺少财务数据的股票拉取，已有数据的不重复拉）
+    await scoreAllStocks(true, true, currentSettings);
     console.log('[cron] 评分完成');
 
     // 5. 短线信号
@@ -895,7 +876,7 @@ app.listen(PORT, '0.0.0.0', async () => {
       const needScore = !latestRow?.d || scoredRow.c < poolCountRow.c * 0.7 || latestRow.d < dayjs().subtract(3,'day').format('YYYYMMDD');
       if (needScore) {
         console.log(`[init] 开始评分（覆盖${scoredRow.c}/${poolCountRow.c}只）...`);
-        await scoreAllStocks(false);
+        await scoreAllStocks(true);
         console.log('[init] 评分完成');
       } else { console.log(`[init] 评分数据已是最新(${latestRow.d}, ${scoredRow.c}只)，跳过`); }
       await calcAllCrowding();

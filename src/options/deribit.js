@@ -37,7 +37,8 @@ class DeribitClient {
    * @param {string} currency - 'BTC' | 'ETH'
    */
   async getIndexPrice(currency = 'BTC') {
-    const r = await this.publicGet('get_index_price', { currency: currency.toUpperCase() });
+    const indexName = currency.toUpperCase() === 'ETH' ? 'eth_usd' : 'btc_usd';
+    const r = await this.publicGet('get_index_price', { index_name: indexName });
     return r.index_price;
   }
 
@@ -94,65 +95,71 @@ class DeribitClient {
   }
 
   /**
-   * 获取期权链报价摘要（含bid/ask/IV/delta/gamma/vega/theta）
+   * 获取期权链报价摘要（含bid/ask/IV，greeks由本地BS模型计算）
+   * 用get_book_summary_by_currency一次获取所有期权，避免几百次串行请求
    * @param {string} currency - 'BTC' | 'ETH'
-   * @param {number} expiryTimestamp - 到期日时间戳，不传则取最近的
+   * @param {number|null} expiryTimestamp - 到期日时间戳，不传则取最近N个
+   * @param {number} maxExpiries - 最多返回多少个到期日（默认3）
    */
-  async getOptionChainSummary(currency = 'BTC', expiryTimestamp = null) {
-    const all = await this.getInstruments(currency, 'option', false);
-    const indexPrice = await this.getIndexPrice(currency);
+  async getOptionChainSummary(currency = 'BTC', expiryTimestamp = null, maxExpiries = 3) {
+    const cur = currency.toUpperCase();
+    const [instruments, bookSummary, indexPrice] = await Promise.all([
+      this.getInstruments(cur, 'option', false),
+      this.publicGet('get_book_summary_by_currency', { currency: cur, kind: 'option' }),
+      this.getIndexPrice(cur)
+    ]);
 
-    // 过滤到期日
-    let expiries = [...new Set(all.map(i => i.expiration_timestamp))].sort();
+    // bookSummary用instrument_name做索引
+    const bookMap = {};
+    for (const b of bookSummary) {
+      bookMap[b.instrument_name] = b;
+    }
+
+    // 按到期日分组
+    const byExpiry = {};
+    for (const inst of instruments) {
+      if (!inst.is_active) continue;
+      const exp = inst.expiration_timestamp;
+      if (!byExpiry[exp]) byExpiry[exp] = [];
+      const book = bookMap[inst.instrument_name] || {};
+      byExpiry[exp].push({
+        instrument: inst.instrument_name,
+        strike: inst.strike,
+        type: inst.option_type,
+        expiry: exp,
+        creationTs: inst.creation_timestamp,
+        bidPrice: book.bid_price,
+        askPrice: book.ask_price,
+        markPrice: book.mark_price,
+        markIv: book.mark_iv ? (book.mark_iv > 1 ? book.mark_iv / 100 : book.mark_iv) : 0.6, // 兼容：Deribit返回百分比(如65=65%)或小数(如0.66)，统一转小数
+        underlyingPrice: book.underlying_price || indexPrice,
+        volume: book.volume || 0,
+        openInterest: book.open_interest || 0,
+        priceIndex: inst.price_index
+      });
+    }
+
+    // 排序并选择到期日
+    let expiries = Object.keys(byExpiry).map(Number).sort((a, b) => a - b);
     if (expiryTimestamp) {
       expiries = expiries.filter(e => e === expiryTimestamp);
     } else {
-      // 默认取最近3个到期日（排除已过期的）
+      // 默认取最近N个未到期
       const now = Date.now();
-      expiries = expiries.filter(e => e > now).slice(0, 3);
+      expiries = expiries.filter(e => e > now).slice(0, maxExpiries);
     }
 
-    const chains = [];
-    for (const exp of expiries) {
-      const insts = all.filter(i => i.expiration_timestamp === exp).sort((a, b) => a.strike - b.strike);
-      const options = [];
-
-      // 批量获取ticker（每次请求一个instrument）
-      for (const inst of insts) {
-        try {
-          const ticker = await this.publicGet('ticker', { instrument_name: inst.instrument_name });
-          const greeks = ticker.greeks || {};
-          options.push({
-            instrument: inst.instrument_name,
-            strike: inst.strike,
-            type: inst.option_type, // 'call' | 'put'
-            expiry: inst.expiration_timestamp,
-            bidPrice: ticker.best_bid_price,
-            askPrice: ticker.best_ask_price,
-            markPrice: ticker.mark_price,
-            markIv: ticker.mark_iv,
-            delta: greeks.delta || 0,
-            gamma: greeks.gamma || 0,
-            vega: greeks.vega || 0,
-            theta: greeks.theta || 0,
-            underlyingPrice: ticker.underlying_price || indexPrice,
-            volume: ticker.stats?.volume || 0,
-            openInterest: ticker.open_interest || 0
-          });
-        } catch (e) {
-          // 跳过获取失败的合约
-        }
-      }
-
-      chains.push({
+    const chains = expiries.map(exp => {
+      const options = byExpiry[exp].sort((a, b) => a.strike - b.strike);
+      return {
         expiryTimestamp: exp,
         expiryDate: new Date(exp).toISOString().split('T')[0],
         daysToExpiry: Math.max(0, Math.ceil((exp - Date.now()) / (24 * 3600 * 1000))),
         options
-      });
-    }
+      };
+    });
 
-    return { currency, indexPrice, chains };
+    return { currency: cur, indexPrice, chains };
   }
 
   /**
