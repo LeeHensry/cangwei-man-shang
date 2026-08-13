@@ -46,7 +46,7 @@ function gammaExplosion(params) {
       // 找目标行权价附近的call
       const targetStrike = currentPrice * (1 + otmPercent);
       const targetCall = findNearestOption(calls, targetStrike);
-      if (targetCall && targetCall.askPrice > 0) {
+      if (targetCall && targetCall.askPrice && targetCall.askPrice > 0) {
         const costUSD = targetCall.askPrice * currentPrice; // Deribit期权以BTC计价，这里转USD
         signals.push({
           strategy: 'Gamma Explosion',
@@ -66,7 +66,7 @@ function gammaExplosion(params) {
     if (direction === 'down' || direction === 'both') {
       const targetStrike = currentPrice * (1 - otmPercent);
       const targetPut = findNearestOption(puts, targetStrike);
-      if (targetPut && targetPut.askPrice > 0) {
+      if (targetPut && targetPut.askPrice && targetPut.askPrice > 0) {
         const costUSD = targetPut.askPrice * currentPrice;
         signals.push({
           strategy: 'Gamma Explosion',
@@ -115,6 +115,7 @@ function coveredCall(params) {
 
     // 选择最接近目标价的虚值call
     const selectedCall = calls[0];
+    if (!selectedCall || !selectedCall.bidPrice || selectedCall.bidPrice <= 0) continue;
     const premiumPct = selectedCall.bidPrice * 100; // Deribit价格以BTC计，0.001 = 0.1% of 1 BTC
     const annualizedReturn = (premiumPct / expiry.daysToExpiry) * 365;
 
@@ -162,7 +163,7 @@ function protectivePut(params) {
   for (const expiry of suitable.slice(0, 2)) {
     const puts = expiry.options.filter(o => o.type === 'put' && o.strike <= currentPrice).sort((a, b) => b.strike - a.strike);
     const selectedPut = findNearestOption(puts, targetStrike);
-    if (!selectedPut || selectedPut.askPrice <= 0) continue;
+    if (!selectedPut || !selectedPut.askPrice || selectedPut.askPrice <= 0) continue;
 
     const costPct = selectedPut.askPrice * 100; // Deribit以BTC计，0.01 = 1%
     const protectedPrice = selectedPut.strike;
@@ -217,8 +218,9 @@ function shortStrangle(params) {
 
     if (!shortCall || !shortPut) continue;
 
-    const callPremium = shortCall.bidPrice;
-    const putPremium = shortPut.bidPrice;
+    const callPremium = shortCall.bidPrice || 0;
+    const putPremium = shortPut.bidPrice || 0;
+    if (callPremium <= 0 || putPremium <= 0) continue;
     const totalPremium = callPremium + putPremium;
     const totalPremiumPct = totalPremium * 100;
     const totalPremiumUSD = totalPremium * currentPrice;
@@ -269,6 +271,7 @@ function longStraddle(params) {
     const atmPut = findATMOption(expiry.options.filter(o => o.type === 'put'), currentPrice);
 
     if (!atmCall || !atmPut) continue;
+    if (!atmCall.askPrice || !atmPut.askPrice || atmCall.askPrice <= 0 || atmPut.askPrice <= 0) continue;
 
     const totalCost = atmCall.askPrice + atmPut.askPrice;
     const totalCostPct = totalCost * 100;
