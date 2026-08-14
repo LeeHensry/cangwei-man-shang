@@ -9,6 +9,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { getCrowdingOverview, triggerCrowdingCalc } from '../api';
+import { useIsMobile } from '../utils/useIsMobile';
 
 const { Title, Text } = Typography;
 
@@ -37,6 +38,7 @@ export default function CrowdingRadar() {
   const [loading, setLoading] = useState(true);
   const [calcLoading, setCalcLoading] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const load = async () => {
     setLoading(true);
@@ -204,27 +206,27 @@ export default function CrowdingRadar() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: 16, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 8 : 0 }}>
         <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}><RadarChartOutlined style={{color:'var(--accent)',marginRight:6}}/>量化拥挤度雷达</Title>
+          <Title level={isMobile ? 5 : 4} style={{ margin: 0, fontWeight: 700 }}><RadarChartOutlined style={{color:'var(--accent)',marginRight:6}}/>量化拥挤度雷达</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>
             识别量化资金动量·搭车加速段·极端拥挤前先跑 · {data.date}
           </Text>
         </div>
-        <Button icon={<ReloadOutlined spin={calcLoading}/>} onClick={handleCalc} loading={calcLoading} type="primary">
+        <Button icon={<ReloadOutlined spin={calcLoading}/>} onClick={handleCalc} loading={calcLoading} type="primary" size={isMobile ? 'small' : 'middle'}>
           {calcLoading ? '计算中' : '重新计算拥挤度'}
         </Button>
       </div>
 
       {/* 总览卡片 */}
       <Row gutter={[12,12]} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card bodyStyle={{padding:'16px 20px'}}>
+        <Col xs={12} md={6}>
+          <Card bodyStyle={{padding: isMobile ? '12px 14px' : '16px 20px'}}>
             <Statistic
               title={<Text type="secondary" style={{fontSize:12}}>全市场平均拥挤度</Text>}
               value={market_avg_crowding}
               suffix="°"
-              valueStyle={{ color: ml.color, fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-mono)' }}
+              valueStyle={{ color: ml.color, fontSize: isMobile ? 26 : 32, fontWeight: 800, fontFamily: 'var(--font-mono)' }}
             />
             <Tag style={{marginTop:8,background:ml.bg,color:ml.color,border:'none',fontWeight:600}}>
               {ml.label}
@@ -232,42 +234,42 @@ export default function CrowdingRadar() {
             <div style={{marginTop:6,fontSize:11,color:'#3A3A3C'}}>{ml.advice}</div>
           </Card>
         </Col>
-        <Col span={5}>
-          <Card bodyStyle={{padding:'16px 20px'}}>
+        <Col xs={12} md={5}>
+          <Card bodyStyle={{padding: isMobile ? '12px 14px' : '16px 20px'}}>
             <div style={{marginBottom:8}}>
               <WarningOutlined style={{color:'var(--up)',marginRight:4}}/>
-              <Text strong style={{fontSize:13,color:'var(--up)'}}>清仓预警</Text>
+              <Text strong style={{fontSize:isMobile?12:13,color:'var(--up)'}}>清仓预警</Text>
             </div>
-            <div style={{fontSize:32,fontWeight:800,fontFamily:'var(--font-mono)',color:'var(--up)'}}>
+            <div style={{fontSize:isMobile?26:32,fontWeight:800,fontFamily:'var(--font-mono)',color:'var(--up)'}}>
               {exit_signals.length}<span style={{fontSize:14,color:'#8E8E93',fontWeight:400,marginLeft:4}}>只</span>
             </div>
             <Text type="secondary" style={{fontSize:11}}>极端拥挤，踩踏风险极高</Text>
           </Card>
         </Col>
-        <Col span={5}>
-          <Card bodyStyle={{padding:'16px 20px'}}>
+        <Col xs={12} md={5}>
+          <Card bodyStyle={{padding: isMobile ? '12px 14px' : '16px 20px'}}>
             <div style={{marginBottom:8}}>
               <RocketOutlined style={{color:'var(--purple)',marginRight:4}}/>
-              <Text strong style={{fontSize:13,color:'var(--purple)'}}>动量搭车</Text>
+              <Text strong style={{fontSize:isMobile?12:13,color:'var(--purple)'}}>动量搭车</Text>
             </div>
-            <div style={{fontSize:32,fontWeight:800,fontFamily:'var(--font-mono)',color:'var(--purple)'}}>
+            <div style={{fontSize:isMobile?26:32,fontWeight:800,fontFamily:'var(--font-mono)',color:'var(--purple)'}}>
               {momentum_candidates.length}<span style={{fontSize:14,color:'#8E8E93',fontWeight:400,marginLeft:4}}>只</span>
             </div>
             <Text type="secondary" style={{fontSize:11}}>温和加速，小仓位顺势介入</Text>
           </Card>
         </Col>
-        <Col span={8}>
-          <Card bodyStyle={{padding:'16px 20px',height:'100%'}}>
+        <Col xs={12} md={8}>
+          <Card bodyStyle={{padding:isMobile?'12px 14px':'16px 20px',height:'100%'}}>
             <div style={{marginBottom:8}}>
               <InfoCircleOutlined style={{color:'#3A3A3C',marginRight:4}}/>
               <Text strong style={{fontSize:12,color:'#3A3A3C'}}>拥挤度策略逻辑</Text>
             </div>
             <div style={{fontSize:11,lineHeight:1.8,color:'#3A3A3C'}}>
-              <div><CheckCircleOutlined style={{color:'var(--down)',fontSize:12}}/> <b>0-30 冷清</b>：无人问津，逆向布局优质股</div>
-              <div><b style={{color:'var(--purple)'}}>●</b> <b>30-55 搭车</b>：量化刚涌入，顺势小仓位介入</div>
+              <div><CheckCircleOutlined style={{color:'var(--down)',fontSize:12}}/> <b>0-30 冷清</b>：逆向布局优质股</div>
+              <div><b style={{color:'var(--purple)'}}>●</b> <b>30-55 搭车</b>：顺势小仓位介入</div>
               <div><b>55-75 持有</b>：趋势延续，不追加</div>
-              <div><WarningOutlined style={{color:'var(--warn)',fontSize:12}}/> <b>75-90 预警</b>：拥挤，准备减仓</div>
-              <div><WarningOutlined style={{color:'var(--up)',fontSize:12}}/> <b>90+ 极端</b>：踩踏风险极高，立即减仓</div>
+              <div><WarningOutlined style={{color:'var(--warn)',fontSize:12}}/> <b>75-90 预警</b>：准备减仓</div>
+              <div><WarningOutlined style={{color:'var(--up)',fontSize:12}}/> <b>90+ 极端</b>：立即减仓</div>
             </div>
           </Card>
         </Col>
@@ -275,12 +277,12 @@ export default function CrowdingRadar() {
 
       {/* 板块拥挤度 + 等级分布 */}
       <Row gutter={[12,12]} style={{ marginBottom: 16 }}>
-        <Col span={16}>
+        <Col xs={24} lg={16}>
           <Card title={<span style={{fontSize:13,fontWeight:600}}>板块拥挤度热力图</span>} bodyStyle={{padding:'8px 12px'}}>
             <ReactECharts option={sectorOption} style={{height: Math.max(240, all_sectors.length * 28)}} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card title={<span style={{fontSize:13,fontWeight:600}}>板块状态分布</span>} bodyStyle={{padding:'10px'}}>
             <ReactECharts option={levelPieOption} style={{height: 260}} />
           </Card>
@@ -310,6 +312,7 @@ export default function CrowdingRadar() {
             rowKey="code"
             pagination={false}
             size="small"
+            scroll={isMobile ? { x: 550 } : undefined}
             onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: () => navigate('/stock/' + r.code) })}
           />
         </Card>
@@ -317,7 +320,7 @@ export default function CrowdingRadar() {
 
       {/* 动量搭车 + 冷清机会 */}
       <Row gutter={[12,12]}>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <Card
             title={
               <Space size={8}>
@@ -340,11 +343,12 @@ export default function CrowdingRadar() {
               rowKey="code"
               pagination={false}
               size="small"
+              scroll={isMobile ? { x: 500 } : undefined}
               onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: () => navigate('/stock/' + r.code) })}
             />
           </Card>
         </Col>
-        <Col span={12}>
+        <Col xs={24} lg={12}>
           <Card
             title={
               <Space size={8}>
@@ -367,6 +371,7 @@ export default function CrowdingRadar() {
               rowKey="code"
               pagination={false}
               size="small"
+              scroll={isMobile ? { x: 500 } : undefined}
               onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: () => navigate('/stock/' + r.code) })}
             />
           </Card>

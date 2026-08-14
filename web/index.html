@@ -133,6 +133,39 @@
     .ant-btn, .ant-tag, .ant-menu-item, .ant-table-tbody > tr {
       transition: all 150ms ease-out !important;
     }
+
+    /* ===== Mobile Responsive ===== */
+    @media (max-width: 767px) {
+      .ant-card { border-radius: var(--radius-md) !important; }
+      .ant-card-body { padding: 12px !important; }
+      .ant-card-head { padding: 0 12px !important; min-height: 44px !important; }
+      .ant-card-head-title { font-size: 13px !important; padding: 10px 0 !important; }
+      .ant-statistic-content { font-size: 24px !important; }
+      .ant-table { font-size: 12px !important; }
+      .ant-table-thead > tr > th { font-size: 11px !important; padding: 8px 6px !important; white-space: nowrap; }
+      .ant-table-tbody > tr > td { padding: 8px 6px !important; }
+      .ant-table-wrapper { overflow-x: auto !important; }
+      .ant-table { min-width: 100%; }
+      .ant-divider { margin: 8px 0 !important; }
+      .ant-tag { font-size: 10px !important; padding: 0 5px !important; line-height: 18px !important; }
+      .ant-badge { font-size: 11px; }
+      .ant-progress { margin: 0; }
+      .ant-row { margin-left: -4px !important; margin-right: -4px !important; }
+      .ant-row > [class*="ant-col"] { padding-left: 4px !important; padding-right: 4px !important; }
+      .ant-space { gap: 6px !important; }
+      .ant-alert { padding: 8px 10px !important; font-size: 12px !important; }
+      .ant-alert-message { font-size: 13px !important; margin-bottom: 2px !important; }
+      .ant-alert-description { font-size: 11px !important; }
+      .ant-tabs-tab { font-size: 13px !important; padding: 6px 8px !important; }
+      .ant-tabs-nav { margin-bottom: 8px !important; }
+      .ant-spin-nested-loading, .ant-spin-container { min-height: 100px; }
+      .ant-drawer-body { padding: 0 !important; }
+      /* Drawer menu logo area */
+      .ant-drawer-body .nav-logo { padding-left: 20px !important; }
+      /* Prevent horizontal overflow */
+      html, body { overflow-x: hidden; max-width: 100vw; }
+      #root { overflow-x: hidden; }
+    }
   </style>
 </head>
 <body>

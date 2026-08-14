@@ -9,6 +9,7 @@ import {
   SafetyCertificateOutlined, CalculatorOutlined, LineChartOutlined,
   FundOutlined, WarningOutlined, CheckCircleOutlined
 } from '@ant-design/icons';
+import { useIsMobile } from '../utils/useIsMobile';
 
 const { Title, Text, Paragraph } = Typography;
 const { TabPane } = Tabs;
@@ -549,12 +550,13 @@ function BacktestPanel({ currency }) {
 export default function Options() {
   const [currency, setCurrency] = useState('BTC');
   const [activeTab, setActiveTab] = useState('signals');
+  const isMobile = useIsMobile();
 
   return (
     <div>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16}}>
-        <Space align="center" size={12}>
-          <Title level={4} style={{margin:0}}>🎯 期权策略</Title>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: 16, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 8 : 0}}>
+        <Space align="center" size={isMobile ? 6 : 12} wrap>
+          <Title level={isMobile ? 5 : 4} style={{margin:0}}>🎯 期权策略</Title>
           <Tag color="orange" icon={<ThunderboltOutlined/>}>AK策略体系</Tag>
           <Tag color="blue">Deribit</Tag>
         </Space>
@@ -570,26 +572,21 @@ export default function Options() {
       <Alert
         type="info"
         message="AK期权策略体系说明"
-        description="基于AlbertTheKing期权交易教学，包含Gamma Explosion(末日轮)、Covered Call(备兑看涨)、Protective Put(保护性看跌)、Short Strangle(做空波动率)等策略。所有策略计算基于Deribit实时期权链数据。"
+        description={isMobile ? "基于AlbertTheKing期权交易教学，包含Gamma Explosion、Covered Call、Protective Put、Short Strangle等策略，基于Deribit实时数据。" : "基于AlbertTheKing期权交易教学，包含Gamma Explosion(末日轮)、Covered Call(备兑看涨)、Protective Put(保护性看跌)、Short Strangle(做空波动率)等策略。所有策略计算基于Deribit实时期权链数据。"}
         showIcon
         style={{marginBottom: 16}}
       />
 
-      <Card>
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          <TabPane tab={<span><ThunderboltOutlined/>策略信号</span>} key="signals">
-            <SignalsPanel currency={currency} />
-          </TabPane>
-          <TabPane tab={<span><FundOutlined/>期权链</span>} key="chain">
-            <OptionChain currency={currency} />
-          </TabPane>
-          <TabPane tab={<span><CalculatorOutlined/>盈亏计算</span>} key="calculator">
-            <CalculatorPanel currency={currency} />
-          </TabPane>
-          <TabPane tab={<span><LineChartOutlined/>策略回测</span>} key="backtest">
-            <BacktestPanel currency={currency} />
-          </TabPane>
-        </Tabs>
+      <Card styles={{body: isMobile ? {padding: '12px 8px'} : undefined}}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab}
+          tabBarStyle={isMobile ? {marginBottom: 8} : undefined}
+          items={[
+            { key: 'signals', label: <span><ThunderboltOutlined/>{isMobile ? '信号' : '策略信号'}</span>, children: <SignalsPanel currency={currency} /> },
+            { key: 'chain', label: <span><FundOutlined/>{isMobile ? '链' : '期权链'}</span>, children: <OptionChain currency={currency} /> },
+            { key: 'calculator', label: <span><CalculatorOutlined/>{isMobile ? '计算' : '盈亏计算'}</span>, children: <CalculatorPanel currency={currency} /> },
+            { key: 'backtest', label: <span><LineChartOutlined/>回测</span>, children: <BacktestPanel currency={currency} /> },
+          ]}
+        />
       </Card>
     </div>
   );

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Layout, Menu, Typography, Badge, Space, Result, Button } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Menu, Typography, Badge, Space, Result, Button, Drawer } from 'antd';
 import {
   DashboardOutlined,
   ThunderboltOutlined,
@@ -11,10 +11,12 @@ import {
   ControlOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MenuOutlined,
   FundProjectionScreenOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider, UserBadge, useAuth } from './auth';
+import { useIsMobile } from './utils/useIsMobile';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
 import Crowding from './pages/Crowding';
@@ -58,6 +60,65 @@ function PixelLogo({ size = 36 }) {
   );
 }
 
+// 侧边栏菜单内容（桌面Sider和移动端Drawer共用）
+function SidebarContent({ collapsed, onCollapse, onNavigate, currentPath, menuItems, isMobile }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: isMobile ? '100%' : '100vh' }}>
+      {/* Logo */}
+      <div className="nav-logo" style={collapsed ? { justifyContent: 'center', padding: '0 !important' } : undefined}>
+        <PixelLogo size={collapsed ? 30 : 34} />
+        {!collapsed && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1 }}>
+            <div className="logo-text">仓位满上</div>
+            <div className="logo-sub">TOP UP</div>
+          </div>
+        )}
+      </div>
+
+      {/* Menu */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: 6 }}>
+        <Menu
+          theme="light"
+          mode="inline"
+          selectedKeys={[currentPath.startsWith('/stock') ? '/signals' : currentPath]}
+          items={menuItems}
+          onClick={({ key }) => { onNavigate(key); if (isMobile) onCollapse(false); }}
+          style={{ border: 'none' }}
+        />
+      </div>
+
+      {/* 底栏：版本号 + 折叠按钮（仅桌面端显示） */}
+      {!isMobile && (
+        <div
+          onClick={() => onCollapse(!collapsed)}
+          style={{
+            height: 40,
+            borderTop: '1px solid #E8E8ED',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            padding: collapsed ? 0 : '0 16px',
+            cursor: 'pointer',
+            color: '#8E8E93',
+            fontSize: 11,
+            flexShrink: 0,
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#F5F5F7'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          {!collapsed && (
+            <span className="num-mono" style={{ color: '#AEAEB2', letterSpacing: '0.05em' }}>v1.5.1</span>
+          )}
+          {collapsed
+            ? <MenuUnfoldOutlined style={{ fontSize: 14 }} />
+            : <MenuFoldOutlined style={{ fontSize: 14 }} />
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 403 无权限提示页
 function RequireAdmin({ children }) {
   const { user } = useAuth();
@@ -81,7 +142,14 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // 切换到移动端时重置折叠状态
+  useEffect(() => {
+    if (isMobile) setCollapsed(false);
+  }, [isMobile]);
 
   const allMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
@@ -110,99 +178,105 @@ function AppShell() {
 
   const currentTime = new Date();
 
+  // 移动端路由切换时自动关闭菜单
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
   return (
     <Layout style={{ minHeight: '100vh', background: '#FAFAFA' }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={220}
-        collapsedWidth={60}
-        trigger={null}
-        style={{
-          background: '#fff',
-          position: 'fixed',
-          height: '100vh',
-          zIndex: 100,
-          overflow: 'hidden',
-          borderRight: '1px solid #E8E8ED',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-          {/* Logo */}
-          <div className="nav-logo" style={collapsed ? { justifyContent: 'center', padding: '0 !important' } : undefined}>
-            <PixelLogo size={collapsed ? 30 : 34} />
-            {!collapsed && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1 }}>
-                <div className="logo-text">仓位满上</div>
-                <div className="logo-sub">TOP UP</div>
-              </div>
-            )}
-          </div>
+      {/* 桌面端固定侧边栏 */}
+      {!isMobile && (
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={220}
+          collapsedWidth={60}
+          trigger={null}
+          style={{
+            background: '#fff',
+            position: 'fixed',
+            height: '100vh',
+            zIndex: 100,
+            overflow: 'hidden',
+            borderRight: '1px solid #E8E8ED',
+          }}
+        >
+          <SidebarContent
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            onNavigate={navigate}
+            currentPath={location.pathname}
+            menuItems={menuItems}
+            isMobile={false}
+          />
+        </Sider>
+      )}
 
-          {/* Menu */}
-          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: 6 }}>
-            <Menu
-              theme="light"
-              mode="inline"
-              selectedKeys={[location.pathname.startsWith('/stock') ? '/signals' : location.pathname]}
-              items={menuItems}
-              onClick={({ key }) => navigate(key)}
-              style={{ border: 'none' }}
-            />
-          </div>
+      {/* 移动端抽屉菜单 */}
+      {isMobile && (
+        <Drawer
+          title={null}
+          placement="left"
+          closable={false}
+          onClose={() => setMobileMenuOpen(false)}
+          open={mobileMenuOpen}
+          width={260}
+          bodyStyle={{ padding: 0, background: '#fff' }}
+          styles={{ body: { padding: 0, background: '#fff' } }}
+        >
+          <SidebarContent
+            collapsed={false}
+            onCollapse={setMobileMenuOpen}
+            onNavigate={navigate}
+            currentPath={location.pathname}
+            menuItems={menuItems}
+            isMobile={true}
+          />
+        </Drawer>
+      )}
 
-          {/* 底栏：版本号 + 折叠按钮 */}
-          <div
-            onClick={() => setCollapsed(!collapsed)}
-            style={{
-              height: 40,
-              borderTop: '1px solid #E8E8ED',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: collapsed ? 'center' : 'space-between',
-              padding: collapsed ? 0 : '0 16px',
-              cursor: 'pointer',
-              color: '#8E8E93',
-              fontSize: 11,
-              flexShrink: 0,
-              transition: 'background 150ms',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#F5F5F7'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            {!collapsed && (
-              <span className="num-mono" style={{ color: '#AEAEB2', letterSpacing: '0.05em' }}>v1.4.0</span>
-            )}
-            {collapsed
-              ? <MenuUnfoldOutlined style={{ fontSize: 14 }} />
-              : <MenuFoldOutlined style={{ fontSize: 14 }} />
-            }
-          </div>
-        </div>
-      </Sider>
-
-      <Layout style={{ marginLeft: collapsed ? 60 : 220, transition: 'margin-left 0.2s ease' }}>
+      <Layout style={{ marginLeft: isMobile ? 0 : (collapsed ? 60 : 220), transition: 'margin-left 0.2s ease' }}>
         <Header style={{
-          padding: '0 24px', display: 'flex',
-          alignItems: 'center', justifyContent: 'space-between',
-          position: 'sticky', top: 0, zIndex: 99, height: 56,
+          padding: isMobile ? '0 12px' : '0 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky', top: 0, zIndex: 99, height: isMobile ? 48 : 56,
+          background: '#fff',
+          borderBottom: '1px solid #F0F0F0',
         }}>
-          <Space align="center" size={12}>
-            <Text strong style={{ fontSize: 15, color: '#1A1A1E', fontWeight: 600 }}>{getPageTitle()}</Text>
-            <span className="live-pill">
-              <span className="live-dot" style={{ width: 5, height: 5 }}/>
-              LIVE
-            </span>
-          </Space>
-          <Space size={14}>
-            <Text type="secondary" style={{ fontSize: 12, color: '#8E8E93' }}>
-              {currentTime.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })}
+          <Space align="center" size={isMobile ? 8 : 12}>
+            {isMobile && (
+              <MenuOutlined
+                onClick={() => setMobileMenuOpen(true)}
+                style={{ fontSize: 18, color: '#1A1A1E', cursor: 'pointer', padding: '4px 0' }}
+              />
+            )}
+            <Text strong style={{ fontSize: isMobile ? 14 : 15, color: '#1A1A1E', fontWeight: 600 }}>
+              {getPageTitle()}
             </Text>
+            {!isMobile && (
+              <span className="live-pill">
+                <span className="live-dot" style={{ width: 5, height: 5 }}/>
+                LIVE
+              </span>
+            )}
+          </Space>
+          <Space size={isMobile ? 8 : 14}>
+            {!isMobile && (
+              <Text type="secondary" style={{ fontSize: 12, color: '#8E8E93' }}>
+                {currentTime.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })}
+              </Text>
+            )}
             <UserBadge />
           </Space>
         </Header>
-        <Content style={{ padding: '20px 24px', minHeight: 'calc(100vh - 56px)' }}>
+        <Content style={{
+          padding: isMobile ? '12px 12px 24px' : '20px 24px',
+          minHeight: isMobile ? 'calc(100vh - 48px)' : 'calc(100vh - 56px)',
+        }}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/signals" element={<Signals />} />

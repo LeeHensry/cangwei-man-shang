@@ -9,6 +9,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { getOverview, triggerSync } from '../api';
+import { useIsMobile } from '../utils/useIsMobile';
 
 const { Title, Text } = Typography;
 
@@ -61,6 +62,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const load = async () => {
     setLoading(true);
@@ -186,12 +188,12 @@ export default function Dashboard() {
   return (
     <div>
       {/* 标题行 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: 12, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 8 : 0 }}>
         <div>
-          <Title level={4} style={{ margin: 0, fontWeight: 700 }}>今日市场</Title>
+          <Title level={isMobile ? 5 : 4} style={{ margin: 0, fontWeight: 700 }}>今日市场</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>{data.date} · {data.total_stocks}只股票 · 收盘数据</Text>
         </div>
-        <Button icon={<ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing} size="middle">
+        <Button icon={<ReloadOutlined spin={syncing}/>} onClick={handleSync} loading={syncing} size={isMobile ? "small" : "middle"}>
           {syncing ? '同步中' : '刷新数据'}
         </Button>
       </div>
@@ -200,7 +202,7 @@ export default function Dashboard() {
       {data.crowding && (data.crowding.stock_warnings?.length > 0 || data.crowding.momentum_candidates?.length > 0) && (
         <Row gutter={[10,10]} style={{ marginBottom: 12 }}>
           {data.crowding.stock_warnings?.length > 0 && (
-            <Col span={data.crowding.momentum_candidates?.length > 0 ? 12 : 24}>
+            <Col xs={24} md={data.crowding.momentum_candidates?.length > 0 ? 12 : 24}>
               <Card
                 size="small"
                 title={
@@ -230,7 +232,7 @@ export default function Dashboard() {
             </Col>
           )}
           {data.crowding.momentum_candidates?.length > 0 && (
-            <Col span={data.crowding.stock_warnings?.length > 0 ? 12 : 24}>
+            <Col xs={24} md={data.crowding.stock_warnings?.length > 0 ? 12 : 24}>
               <Card
                 size="small"
                 title={
@@ -262,13 +264,13 @@ export default function Dashboard() {
 
       {/* 指数一行 */}
       <Row gutter={[8,8]} style={{ marginBottom: 12 }}>
-        {data.indices.map(idx => <Col flex="1" key={idx.code}><IndexCard item={idx} /></Col>)}
+        {data.indices.map((idx, i) => <Col xs={12} sm={12} md={6} lg={6} xl={Math.floor(24/data.indices.length)} key={idx.code}><IndexCard item={idx} /></Col>)}
       </Row>
 
       {/* 温度计6 + 信号分布(含行业涨跌)18  等分 */}
       <Row gutter={[10,10]} style={{ marginBottom: 12 }}>
         {/* 市场温度计 */}
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card
             title={
               <Space size={6}>
@@ -296,7 +298,7 @@ export default function Dashboard() {
             style={{ height: '100%' }}
           >
             <div style={{ display:'flex', alignItems:'center' }}>
-              <ReactECharts option={tempOption} style={{ width: 160, height: 140 }} />
+              <ReactECharts option={tempOption} style={{ width: isMobile ? 130 : 160, height: isMobile ? 120 : 140, flexShrink: 0 }} />
               <div style={{ flex: 1, paddingLeft: 4 }}>
                 <div style={{ marginBottom: 6, textAlign:'center' }}>
                   <Text type="secondary" style={{ fontSize: 11 }}>全市场成交 <Text strong style={{fontSize:15,color:'#1A1A1E',fontFamily:'var(--font-mono)',margin:'0 2px'}}>{amountWanYi}</Text>万亿</Text>
@@ -315,7 +317,7 @@ export default function Dashboard() {
         </Col>
 
         {/* 信号分布 + 行业涨跌（整合） */}
-        <Col span={16}>
+        <Col xs={24} lg={16}>
           <Card
             title={
               <Space size={8}>
@@ -348,11 +350,11 @@ export default function Dashboard() {
             {/* 行业涨跌条形图（整合到信号分布卡片） */}
             <div>
               <Row gutter={12}>
-                <Col span={14}>
+                <Col xs={24} md={14}>
                   <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><RiseOutlined style={{color:'var(--up)',fontSize:11,marginRight:2}}/>行业涨跌（实时）</Text>
                   <ReactECharts option={sectorOption} style={{ height: 170, marginTop: 2 }} />
                 </Col>
-                <Col span={10}>
+                <Col xs={24} md={10}>
                   {/* 资金流向 */}
                   <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}><FireOutlined style={{color:'var(--warn)',fontSize:11,marginRight:2}}/>行业资金方向</Text>
                   <div style={{ marginTop: 6 }}>
@@ -399,7 +401,8 @@ export default function Dashboard() {
           dataSource={data.top_stocks}
           rowKey="code"
           pagination={false}
-          size="middle"
+          size={isMobile ? "small" : "middle"}
+          scroll={{ x: isMobile ? 650 : undefined }}
           onRow={(r) => ({ style: { cursor: 'pointer' }, onClick: () => navigate('/stock/' + r.code) })}
         />
       </Card>
