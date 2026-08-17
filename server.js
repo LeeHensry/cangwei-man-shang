@@ -785,19 +785,20 @@ async function runAutoSync(mode = 'incremental') {
   }
 }
 
-// 周一凌晨更新股票池
-cron.schedule('30 0 * * 1', async () => {
-  console.log('[cron] 周一00:30，开始更新股票池...');
+// 周一凌晨00:30(北京时间)更新股票池 = UTC周日16:30
+cron.schedule('30 16 * * 0', async () => {
+  console.log('[cron] 周一00:30(北京时间)，开始更新股票池...');
   try { const r = await stockPool.updateStockPool(200); console.log('[cron] 股票池更新完成:', r); } catch(e) { console.log('[cron] 股票池更新失败:', e.message); }
 });
 
-// 工作日盘中增量同步（10:00开盘后、11:30午盘、14:00下午盘）
-cron.schedule('0 10 * * 1-5', () => runAutoSync('incremental'));
-cron.schedule('30 11 * * 1-5', () => runAutoSync('incremental'));
-cron.schedule('0 14 * * 1-5', () => runAutoSync('incremental'));
+// 工作日盘中增量同步（北京时间：10:00开盘、11:30午盘、14:00下午盘）
+// 注意：cron使用UTC时间，北京时间 = UTC+8
+cron.schedule('0 2 * * 1-5', () => runAutoSync('incremental'));   // UTC 02:00 = 北京10:00
+cron.schedule('30 3 * * 1-5', () => runAutoSync('incremental'));  // UTC 03:30 = 北京11:30
+cron.schedule('0 6 * * 1-5', () => runAutoSync('incremental'));   // UTC 06:00 = 北京14:00
 
-// 收盘后全量同步（15:30）
-cron.schedule('30 15 * * 1-5', () => runAutoSync('full'));
+// 收盘后全量同步（北京时间15:30）= UTC 07:30
+cron.schedule('30 7 * * 1-5', () => runAutoSync('full'));
 
 // 防休眠：每10分钟自ping，保持Render免费版不进入休眠
 // 这样工作日盘中cron任务才能按时触发
