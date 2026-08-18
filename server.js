@@ -176,6 +176,7 @@ const { EventEmitter } = require('events');
 const syncEvents = new EventEmitter();
 syncEvents.setMaxListeners(50);
 let syncRunning = false;
+let syncStartTime = 0;
 
 function emitProgress(stage, message, percent, extra = {}) {
   const payload = JSON.stringify({ stage, message, percent, time: dayjs().format('HH:mm:ss'), ...extra });
@@ -193,8 +194,14 @@ app.get('/api/sync/progress', (req, res) => {
 });
 
 app.post('/api/sync', async (req, res) => {
+  // 如果上次同步超过15分钟还在running，强制重置（防止suspend导致死锁）
+  if (syncRunning && syncStartTime > 0 && Date.now() - syncStartTime > 15 * 60 * 1000) {
+    console.log('[sync] 检测到超时死锁，重置syncRunning');
+    syncRunning = false;
+  }
   if (syncRunning) return res.json({ status: 'running', message: '同步正在进行中' });
   syncRunning = true;
+  syncStartTime = Date.now();
   const syncMode = req.body?.mode || 'incremental';
   const waitForComplete = req.body?.wait === true || req.query?.wait === '1';
 
@@ -280,6 +287,7 @@ app.post('/api/sync', async (req, res) => {
       result = { status: 'error', message: e.message };
     } finally {
       syncRunning = false;
+      syncStartTime = 0;
       setTimeout(() => syncEvents.emit('progress', JSON.stringify({ type:'done', time: dayjs().format('HH:mm:ss') })), 500);
     }
     return result;

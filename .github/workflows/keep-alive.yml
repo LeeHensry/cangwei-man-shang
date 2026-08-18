@@ -22,14 +22,20 @@ on:
           - incremental
 
 jobs:
-  ping:
+  # 纯保活：每10分钟ping，3分钟超时（冷启动时间）
+  healthcheck:
     runs-on: ubuntu-latest
     steps:
-      - name: Health ping
+      - name: Ping
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://cangwei-man-shang.onrender.com/api/version)
-          echo "Status: $STATUS"
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 https://cangwei-man-shang.onrender.com/api/version)
+            echo "Ping $i: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && break
+            sleep 10
+          done
 
+  # 定时同步：触发后持续ping保活6分钟让后台同步完成
   sync:
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -52,20 +58,42 @@ jobs:
             echo "mode=incremental" >> $GITHUB_OUTPUT
           fi
 
-      - name: Wait for cold start
-        run: sleep 20
+      - name: Warm up
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 https://cangwei-man-shang.onrender.com/api/version)
+            echo "Warmup $i: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && break
+            sleep 15
+          done
 
-      - name: Trigger sync (wait for completion)
+      - name: Trigger sync
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
-          echo "=== Triggering $MODE sync (wait mode) ==="
-          RESULT=$(curl -s --max-time 600 -X POST "https://cangwei-man-shang.onrender.com/api/sync?wait=1" \
+          echo "Triggering $MODE sync..."
+          curl -s --max-time 30 -X POST https://cangwei-man-shang.onrender.com/api/sync \
             -H "Content-Type: application/json" \
-            -d "{\"mode\":\"$MODE\",\"wait\":true}")
-          echo "Sync result: $RESULT"
+            -d "{\"mode\":\"$MODE\"}"
+          echo ""
 
-      - name: Verify data
+      - name: Keep alive during sync (ping every 25s for 6 min)
         run: |
-          sleep 5
+          echo "Keeping instance alive during sync..."
+          for i in $(seq 1 15); do
+            sleep 25
+            STATS=$(curl -s --max-time 15 https://cangwei-man-shang.onrender.com/api/db/stats)
+            echo "[$((i*25))s] $STATS"
+          done
+
+      - name: Verify latest data
+        run: |
+          sleep 10
+          TODAY=$(date -u +%Y%m%d)
           STATS=$(curl -s --max-time 30 https://cangwei-man-shang.onrender.com/api/db/stats)
-          echo "DB stats: $STATS"
+          echo "Final stats: $STATS"
+          echo "Today is UTC: $TODAY"
+          if echo "$STATS" | grep -q "\"latest_date\":\"$TODAY\""; then
+            echo "✅ Data is up to date"
+          else
+            echo "⚠️ Data may not be fully synced yet"
+          fi
