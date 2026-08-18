@@ -247,38 +247,45 @@ app.post('/api/sync', async (req, res) => {
         await tq.sleep(syncMode === 'full' ? 120 : 80);
       }
       emitProgress('kline', `K线更新完成：${klineCount} 条${klineErrors > 0 ? `（${klineErrors}个失败）` : ''}`, syncMode === 'full' ? 63 : 53);
-      const indStartPct = syncMode === 'full' ? 65 : 55;
-      emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', indStartPct);
-      const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
-      const allCodes = allCodeRows.map(r => r.code);
-      let indCount = 0;
-      for (let i = 0; i < allCodes.length; i++) {
-        const code = allCodes[i];
-        const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
-        if (ks.length < 25) continue;
-        const inds = calcAllIndicators(ks);
-        const validInds = inds.filter(r => r.ma5 !== null);
-        for (let j = 0; j < validInds.length; j += 200) {
-          await dbBatch(validInds.slice(j, j+200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+
+      if (syncMode === 'full') {
+        const indStartPct = 65;
+        emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', indStartPct);
+        const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
+        const allCodes = allCodeRows.map(r => r.code);
+        let indCount = 0;
+        for (let i = 0; i < allCodes.length; i++) {
+          const code = allCodes[i];
+          const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+          if (ks.length < 25) continue;
+          const inds = calcAllIndicators(ks);
+          const validInds = inds.filter(r => r.ma5 !== null);
+          for (let j = 0; j < validInds.length; j += 200) {
+            await dbBatch(validInds.slice(j, j+200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+          }
+          indCount++;
+          if (i % 20 === 0) { const pct = indStartPct + Math.floor((i / allCodes.length) * 12); emitProgress('indicator', `指标: ${i+1}/${allCodes.length}`, pct); }
         }
-        indCount++;
-        if (i % 20 === 0) { const pct = indStartPct + Math.floor((i / allCodes.length) * 12); emitProgress('indicator', `指标: ${i+1}/${allCodes.length}`, pct); }
+        emitProgress('indicator', `技术指标计算完成：${indCount} 支`, indStartPct + 12);
+        result.indCount = indCount;
+
+        emitProgress('score', '计算多因子评分（含财务数据补全）...', 80);
+        await scoreAllStocks(true, true, currentSettings);
+        emitProgress('score', '评分完成', 87);
+        emitProgress('short', '计算短线信号...', 88);
+        try { await calcAllShortSignals(); } catch(e) { console.log('short signals error:', e.message); }
+        emitProgress('short', '短线信号计算完成', 91);
+        emitProgress('crowding', '计算拥挤度...', 92);
+        try { await calcAllCrowding(); } catch(e) { console.log('crowding error:', e.message); }
+        emitProgress('crowding', '拥挤度计算完成', 96);
+        try { emitProgress('pool', '更新关注池...', 97); await stockPool.updateStockPool(200); } catch(e) { console.log('pool update error:', e.message); }
+      } else {
+        emitProgress('score', '增量同步：快速评分中...', 60);
+        await scoreAllStocks(false, false, currentSettings);
+        emitProgress('score', '评分完成', 95);
       }
-      emitProgress('indicator', `技术指标计算完成：${indCount} 支`, indStartPct + 12);
-      const scoreStartPct = indStartPct + 14;
-      emitProgress('score', '计算多因子评分（含财务数据补全）...', scoreStartPct);
-      await scoreAllStocks(true, true, currentSettings);
-      emitProgress('score', '评分完成', scoreStartPct + 10);
-      const shortStartPct = scoreStartPct + 10;
-      emitProgress('short', '计算短线信号...', shortStartPct);
-      try { await calcAllShortSignals(); } catch(e) { console.log('short signals error:', e.message); }
-      emitProgress('short', '短线信号计算完成', shortStartPct + 3);
-      const crowdStartPct = shortStartPct + 3;
-      emitProgress('crowding', '计算拥挤度...', crowdStartPct);
-      try { await calcAllCrowding(); } catch(e) { console.log('crowding error:', e.message); }
-      emitProgress('crowding', '拥挤度计算完成', crowdStartPct + 3);
-      try { emitProgress('pool', '更新关注池...', crowdStartPct + 3); await stockPool.updateStockPool(200); } catch(e) { console.log('pool update error:', e.message); }
-      emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线 / ${indCount}支评分 / 200关注池${klineErrors > 0 ? `（${klineErrors}个股票K线拉取失败）` : ''}`, 100);
+
+      emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线${syncMode === 'full' ? ' / 全量指标评分' : '（增量快速模式）'}${klineErrors > 0 ? `（${klineErrors}个K线拉取失败）` : ''}`, 100);
       console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 同步完成 (' + syncMode + ')');
       result = { status: 'completed', mode: syncMode, quotes: quotes.length, klines: klineCount, indicators: indCount, errors: klineErrors };
     } catch(e) {
@@ -773,31 +780,39 @@ async function runAutoSync(mode = 'incremental') {
     }
     console.log(`[cron] K线更新: ${klineCount}条`);
 
-    // 3. 计算技术指标
-    const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
-    const allCodes = allCodeRows.map(r => r.code);
-    let indCount = 0;
-    for (let i = 0; i < allCodes.length; i++) {
-      const ks = await dbAll('SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC', [allCodes[i]]);
-      if (ks.length < 25) continue;
-      const inds = calcAllIndicators(ks);
-      const validInds = inds.filter(r => r.ma5 !== null);
-      for (let j = 0; j < validInds.length; j += 200) {
-        await dbBatch(validInds.slice(j, j+200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [allCodes[i], r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+    if (mode === 'full') {
+      // 全量同步才重算技术指标、评分、短线、拥挤度
+      // 3. 计算技术指标
+      const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
+      const allCodes = allCodeRows.map(r => r.code);
+      let indCount = 0;
+      for (let i = 0; i < allCodes.length; i++) {
+        const ks = await dbAll('SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC', [allCodes[i]]);
+        if (ks.length < 25) continue;
+        const inds = calcAllIndicators(ks);
+        const validInds = inds.filter(r => r.ma5 !== null);
+        for (let j = 0; j < validInds.length; j += 200) {
+          await dbBatch(validInds.slice(j, j+200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [allCodes[i], r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+        }
+        indCount++;
       }
-      indCount++;
+      console.log(`[cron] 技术指标: ${indCount}支`);
+
+      // 4. 评分（syncFinance=true：仅对缺少财务数据的股票拉取，已有数据的不重复拉）
+      await scoreAllStocks(true, true, currentSettings);
+      console.log('[cron] 评分完成');
+
+      // 5. 短线信号
+      try { await calcAllShortSignals(); } catch(e) { console.log('[cron] 短线信号失败:', e.message); }
+
+      // 6. 拥挤度
+      try { await calcAllCrowding(); } catch(e) { console.log('[cron] 拥挤度失败:', e.message); }
+    } else {
+      // 增量同步：只更新行情+K线+快速评分（不重算指标和拥挤度）
+      console.log('[cron] 增量模式：跳过技术指标/拥挤度重算');
+      await scoreAllStocks(false, false, currentSettings);
+      console.log('[cron] 快速评分完成');
     }
-    console.log(`[cron] 技术指标: ${indCount}支`);
-
-    // 4. 评分（syncFinance=true：仅对缺少财务数据的股票拉取，已有数据的不重复拉）
-    await scoreAllStocks(true, true, currentSettings);
-    console.log('[cron] 评分完成');
-
-    // 5. 短线信号
-    try { await calcAllShortSignals(); } catch(e) { console.log('[cron] 短线信号失败:', e.message); }
-
-    // 6. 拥挤度
-    try { await calcAllCrowding(); } catch(e) { console.log('[cron] 拥挤度失败:', e.message); }
 
     console.log(`[cron] ✅ ${mode === 'full' ? '全量' : '增量'}同步完成`);
   } catch(e) {
