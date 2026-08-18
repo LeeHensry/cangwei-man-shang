@@ -1,20 +1,72 @@
-name: Keep Render Alive
+name: Keep Alive & Sync
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 每10分钟执行一次
-  workflow_dispatch:         # 支持手动触发
+    # 每10分钟ping一次保活（UTC时间，对应北京时间每小时0/10/20/30/40/50分）
+    - cron: '*/10 * * * *'
+    # 工作日盘中同步触发点（北京时间10:00/11:30/14:00 = UTC 02:00/03:30/06:00）
+    - cron: '0 2 * * 1-5'
+    - cron: '30 3 * * 1-5'
+    - cron: '0 6 * * 1-5'
+    # 工作日收盘后全量同步（北京时间15:35 = UTC 07:35）
+    - cron: '35 7 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '同步模式 (incremental/full)'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - incremental
 
 jobs:
-  ping:
+  healthcheck:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Render service
+      - name: Ping health check
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://cangwei-man-shang.onrender.com/api/version)
-          echo "HTTP Status: $STATUS"
-          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
-            echo "✅ Service is alive"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://cangwei-man-shang.onrender.com/api/version)
+          echo "Health check status: $STATUS"
+
+  sync:
+    needs: healthcheck
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 2 * * 1-5' ||
+        github.event.schedule == '30 3 * * 1-5' ||
+        github.event.schedule == '0 6 * * 1-5' ||
+        github.event.schedule == '35 7 * * 1-5'
+      ))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine sync mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "35 7 * * 1-5" ]; then
+            echo "mode=full" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Service returned status $STATUS (may be cold-starting)"
+            echo "mode=incremental" >> $GITHUB_OUTPUT
           fi
+
+      - name: Wait for service warmup
+        run: sleep 15
+
+      - name: Trigger data sync
+        run: |
+          MODE="${{ steps.mode.outputs.mode }}"
+          echo "Triggering $MODE sync..."
+          RESULT=$(curl -s --max-time 30 -X POST https://cangwei-man-shang.onrender.com/api/sync \
+            -H "Content-Type: application/json" \
+            -d "{\"mode\":\"$MODE\"}")
+          echo "Response: $RESULT"
+
+      - name: Wait and verify
+        run: |
+          sleep 30
+          STATS=$(curl -s --max-time 30 https://cangwei-man-shang.onrender.com/api/db/stats)
+          echo "DB Stats after sync: $STATS"
