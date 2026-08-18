@@ -196,8 +196,10 @@ app.post('/api/sync', async (req, res) => {
   if (syncRunning) return res.json({ status: 'running', message: '同步正在进行中' });
   syncRunning = true;
   const syncMode = req.body?.mode || 'incremental';
-  res.json({ status: 'started', message: syncMode === 'full' ? '全量数据同步已启动' : '数据同步已启动', mode: syncMode });
-  (async () => {
+  const waitForComplete = req.body?.wait === true || req.query?.wait === '1';
+
+  const doSync = (async () => {
+    let result = { status: 'ok', klineCount: 0, indCount: 0, errors: 0 };
     try {
       const currentSettings = userSettings;
       emitProgress('init', syncMode === 'full' ? '开始全量数据同步（拉取3年历史K线）...' : '开始增量同步数据...', 0);
@@ -209,6 +211,7 @@ app.post('/api/sync', async (req, res) => {
       }
       emitProgress('quote', `正在拉取 ${codes.length} 支股票实时行情...`, 5);
       let quotes = [];
+      let klineErrors = 0;
       try { quotes = await tq.getQuickStockList(codes); } catch(e) { emitProgress('quote', `行情拉取失败: ${e.message}`, 8); }
       const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
       const today = dayjs().format('YYYYMMDD');
@@ -221,7 +224,7 @@ app.post('/api/sync', async (req, res) => {
       const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
       const klineEnd = dayjs().format('YYYY-MM-DD');
       emitProgress('kline', `更新K线数据（${syncMode === 'full' ? '全量3年' : '近60天增量'}）...`, 18);
-      let klineCount = 0, klineErrors = 0;
+      let klineCount = 0;
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
         try {
@@ -270,14 +273,25 @@ app.post('/api/sync', async (req, res) => {
       try { emitProgress('pool', '更新关注池...', crowdStartPct + 3); await stockPool.updateStockPool(200); } catch(e) { console.log('pool update error:', e.message); }
       emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线 / ${indCount}支评分 / 200关注池${klineErrors > 0 ? `（${klineErrors}个股票K线拉取失败）` : ''}`, 100);
       console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 同步完成 (' + syncMode + ')');
+      result = { status: 'completed', mode: syncMode, quotes: quotes.length, klines: klineCount, indicators: indCount, errors: klineErrors };
     } catch(e) {
       emitProgress('error', '同步失败: ' + e.message, -1);
       console.error('同步失败:', e);
+      result = { status: 'error', message: e.message };
     } finally {
       syncRunning = false;
       setTimeout(() => syncEvents.emit('progress', JSON.stringify({ type:'done', time: dayjs().format('HH:mm:ss') })), 500);
     }
+    return result;
   })();
+
+  if (waitForComplete) {
+    const result = await doSync;
+    return res.json(result);
+  } else {
+    res.json({ status: 'started', message: syncMode === 'full' ? '全量数据同步已启动' : '数据同步已启动', mode: syncMode });
+    doSync.catch(e => console.error('sync error:', e));
+  }
 });
 
 // ========== 短线策略 API ==========
