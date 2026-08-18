@@ -207,6 +207,7 @@ app.post('/api/sync', async (req, res) => {
 
   const doSync = (async () => {
     let result = { status: 'ok', klineCount: 0, indCount: 0, errors: 0 };
+    let indCount = 0;
     try {
       const currentSettings = userSettings;
       emitProgress('init', syncMode === 'full' ? '开始全量数据同步（拉取3年历史K线）...' : '开始增量同步数据...', 0);
@@ -253,7 +254,7 @@ app.post('/api/sync', async (req, res) => {
         emitProgress('indicator', '计算技术指标（MA/MACD/RSI/KDJ/BOLL）...', indStartPct);
         const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
         const allCodes = allCodeRows.map(r => r.code);
-        let indCount = 0;
+        indCount = 0;
         for (let i = 0; i < allCodes.length; i++) {
           const code = allCodes[i];
           const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
