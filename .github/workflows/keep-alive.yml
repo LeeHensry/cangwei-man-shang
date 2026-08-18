@@ -76,13 +76,13 @@ jobs:
             -d "{\"mode\":\"$MODE\"}"
           echo ""
 
-      - name: Keep alive during sync (ping every 25s for 6 min)
+      - name: Keep alive during sync (ping every 20s for 4 min)
         run: |
           echo "Keeping instance alive during sync..."
-          for i in $(seq 1 15); do
-            sleep 25
+          for i in $(seq 1 12); do
+            sleep 20
             STATS=$(curl -s --max-time 15 https://cangwei-man-shang.onrender.com/api/db/stats)
-            echo "[$((i*25))s] $STATS"
+            echo "[$((i*20))s] $STATS"
           done
 
       - name: Verify latest data
