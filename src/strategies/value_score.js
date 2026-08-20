@@ -513,7 +513,7 @@ async function calcValuationScore(code) {
   // ---- 历史价格百分位（满分40，行业权重调整）----
   const vw = industry.group.valueWeight || 1.0;
   const klines = await dbAll(`
-    SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 750
+    SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 520
   `, [code]);
   
   let priceScore = 20;

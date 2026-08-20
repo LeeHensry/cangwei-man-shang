@@ -43,7 +43,7 @@ async function runBacktest(params) {
     if (availableDays >= 40) {
       effMaShort = 5;
       effMaLong = 10;
-      dataNote = `当前仅有${availableDays}个交易日数据，已自动调整为MA5/MA10短周期回测。点击"全量同步"可获取3年历史数据进行长期回测。`;
+      dataNote = `当前仅有${availableDays}个交易日数据，已自动调整为MA5/MA10短周期回测。点击"全量同步"可获取2年历史数据进行长期回测。`;
     } else if (availableDays >= 25) {
       effMaShort = 5;
       effMaLong = 10;

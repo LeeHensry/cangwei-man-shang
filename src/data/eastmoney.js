@@ -144,7 +144,7 @@ async function getDailyKline(code, startDate, endDate, klt = '101') {
         fqt: 1,           // 前复权
         beg: startDate,
         end: endDate,
-        smplmt: 800,     // 最多条数
+        smplmt: 550,     // 最多条数(2年约500交易日)
         lmt: 1000000,
         _: Date.now()
       }
@@ -167,7 +167,7 @@ async function getDailyKline(code, startDate, endDate, klt = '101') {
         amplitude: parseFloat(parts[7]),
         pct_chg: parseFloat(parts[8]),
         chg: parseFloat(parts[9]),
-        turnover: parseFloat(parts[11]) || null,
+        turnover: parseFloat(parts[10]) || null,  // f61换手率(%)
       };
     });
   } catch (e) {

@@ -2,7 +2,7 @@
  * 量化拥挤度因子模块
  * 核心思路：识别量化资金行为痕迹
  *  - 动量加速度：短期涨幅/中期涨幅，>1.5说明加速赶顶
- *  - 换手率分位：近3年换手率百分位，>90%极端活跃
+ *  - 换手率分位：近2年换手率百分位，>90%极端活跃
  *  - 量价背离：价格新高但量能萎缩
  *  - 成交额集中度：板块内TOP10成交额占比
  *  - 连涨天数：个股连续上涨天数
@@ -102,7 +102,7 @@ function calcConsecutiveDays(klines) {
 async function calcStockCrowding(code) {
   const klines = await dbAll(`
     SELECT trade_date, close, volume, amount, pct_chg, high, low, turnover
-    FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 750
+    FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 520
   `, [code]);
   if (klines.length < 30) {
     return { score: 50, factors: {}, level: 'normal', signal: 'hold' };
@@ -474,6 +474,21 @@ async function calcAllCrowding() {
   for (let i = 0; i < secStmts.length; i += 200) {
     await dbBatch(secStmts.slice(i, i + 200));
   }
+
+  // 回写crowding_score/crowding_level到stock_score
+  try {
+    const updateStmts = results.map(r => ({
+      sql: `UPDATE stock_score SET crowding_score = ?, crowding_level = ? WHERE code = ? AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = ?)`,
+      args: [r.combined_crowding_score, r.level, r.code, r.code]
+    }));
+    for (let i = 0; i < updateStmts.length; i += 200) {
+      await dbBatch(updateStmts.slice(i, i + 200));
+    }
+    console.log(`  已回写拥挤度分数到 ${results.length} 只股票评分`);
+  } catch(e) {
+    console.log('  回写stock_score失败:', e.message);
+  }
+
   console.log(`\n✅ 拥挤度计算完成，共 ${results.length} 只股票，${sectorResults.length} 个板块`);
   return { stocks: results.length, sectors: sectorResults.length };
 }

@@ -120,7 +120,7 @@ app.get('/api/stocks', async (req, res) => {
     if (minScore) { where += ` AND s.total_score >= ?`; params.push(parseInt(minScore)); }
     const latestKlineDateRow = await dbGet('SELECT MAX(trade_date) as d FROM daily_kline');
     const latestKlineDate = latestKlineDateRow?.d;
-    let rows = await dbAll(`SELECT s.*, i.name, i.total_mv, v.pe, k.close as current_price, k.pct_chg as daily_pct_chg FROM stock_score s LEFT JOIN stock_info i ON s.code = i.code LEFT JOIN valuation v ON s.code = v.code AND v.trade_date = (SELECT MAX(trade_date) FROM valuation) LEFT JOIN daily_kline k ON s.code = k.code AND k.trade_date = ? ${where}`, [latestKlineDate, ...params]);
+    let rows = await dbAll(`SELECT s.*, i.name, i.total_mv, v.pe, k.close as current_price, k.pct_chg as daily_pct_chg FROM stock_score s LEFT JOIN stock_info i ON s.code = i.code LEFT JOIN valuation v ON s.code = v.code AND v.trade_date = (SELECT MAX(trade_date) FROM valuation WHERE code = s.code) LEFT JOIN daily_kline k ON k.code = s.code AND k.trade_date = (SELECT MAX(trade_date) FROM daily_kline WHERE code = s.code) ${where}`, [...params]);
     rows = rows.map(r => { let ind = null; try { ind = JSON.parse(r.quality_detail); } catch(e) {} return { ...r, _industry: ind?.industry, _isNewEconomy: ind?.isNewEconomy, _isOldman: ind?.isOldman }; });
     if (industry && industry !== 'all') rows = rows.filter(r => r._industry && r._industry.includes(industry));
     if (isNewEconomy === 'true') rows = rows.filter(r => r._isNewEconomy);
@@ -210,7 +210,7 @@ app.post('/api/sync', async (req, res) => {
     let indCount = 0;
     try {
       const currentSettings = userSettings;
-      emitProgress('init', syncMode === 'full' ? '开始全量数据同步（拉取3年历史K线）...' : '开始增量同步数据...', 0);
+      emitProgress('init', syncMode === 'full' ? '开始全量数据同步（拉取2年历史K线）...' : '开始增量同步数据...', 0);
       let codes = await stockPool.getPoolCodes();
       if (codes.length === 0) { const infoRows = await dbAll('SELECT code FROM stock_info'); codes = infoRows.map(r => r.code).filter(c => /^\d{6}$/.test(c)); }
       if (codes.length === 0) {
@@ -228,10 +228,10 @@ app.post('/api/sync', async (req, res) => {
       const valData = quotes.filter(q=>q.code&&q.pe!=null);
       await dbBatch(valData.map(q => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [q.code, today, q.pe] })));
       emitProgress('quote', `行情更新完成：${quotes.length} 支`, 15);
-      const klineHistoryDays = syncMode === 'full' ? 1100 : 60;
+      const klineHistoryDays = syncMode === 'full' ? 730 : 60;
       const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
       const klineEnd = dayjs().format('YYYY-MM-DD');
-      emitProgress('kline', `更新K线数据（${syncMode === 'full' ? '全量3年' : '近60天增量'}）...`, 18);
+      emitProgress('kline', `更新K线数据（${syncMode === 'full' ? '全量2年' : '近60天增量'}）...`, 18);
       let klineCount = 0;
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
@@ -354,7 +354,7 @@ app.post('/api/sync/step', async (req, res) => {
       }
 
       const state = stepSyncState.kline;
-      const klineHistoryDays = req.body?.full ? 1100 : 60;
+      const klineHistoryDays = req.body?.full ? 730 : 60;
       const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
       const klineEnd = dayjs().format('YYYY-MM-DD');
       let processed = 0, klineCount = 0, errors = 0;
@@ -571,7 +571,7 @@ async function runStepKline(startTime, batchSize, full) {
   }
 
   const state = stepSyncState.kline;
-  const klineHistoryDays = full ? 1100 : 60;
+  const klineHistoryDays = full ? 730 : 60;
   const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
   const klineEnd = dayjs().format('YYYY-MM-DD');
   let processed = 0, klineCount = 0, errors = 0;
@@ -1119,7 +1119,7 @@ async function runAutoSync(mode = 'incremental') {
     console.log(`[cron] 行情更新: ${quotes.length}支`);
 
     // 2. 拉取K线
-    const klineHistoryDays = mode === 'full' ? 1100 : 30;
+    const klineHistoryDays = mode === 'full' ? 730 : 60;
     const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
     const klineEnd = dayjs().format('YYYY-MM-DD');
     let klineCount = 0;

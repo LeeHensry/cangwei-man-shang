@@ -97,9 +97,9 @@ function generateDailyReport() {
     
     const isBuy = s.signal === 'buy';
     report += `**${i+1}. ${s.stock_name}（${s.code}）** ${isBuy ? '🟢买入' : '🟡关注'}\n`;
-    report += `- 现价：**${s.current_price?.toFixed(2)}** | PE(TTM)：${val.current_pe} | 近3年价格位置：${val.price_percentile}%\n`;
+    report += `- 现价：**${s.current_price?.toFixed(2)}** | PE(TTM)：${val.current_pe} | 近2年价格位置：${val.price_percentile}%\n`;
     report += `- 质量分${s.quality_score}：ROE ${ql.roe?.toFixed(1)}% | 毛利率${ql.gross_margin?.toFixed(1)}% | 净利率${ql.net_margin?.toFixed(1)}% | 负债率${ql.debt_ratio?.toFixed(1)}%\n`;
-    report += `- 估值分${s.valuation_score}：${val.price_percentile < 20 ? '价格位于近3年低位' : '价格位置中等'}，${val.current_pe < 10 ? 'PE极低' : val.current_pe < 15 ? 'PE较低' : 'PE合理'}\n`;
+    report += `- 估值分${s.valuation_score}：${val.price_percentile < 20 ? '价格位于近2年低位' : '价格位置中等'}，${val.current_pe < 10 ? 'PE极低' : val.current_pe < 15 ? 'PE较低' : 'PE合理'}\n`;
     report += `- 技术分${s.technical_score}：${(tech.signals||[]).slice(0,2).join('、') || '中性'}\n`;
     
     if (isBuy) {
@@ -138,7 +138,7 @@ function generateDailyReport() {
     reduceList.forEach(s => {
       const val = JSON.parse(s.valuation_detail || '{}');
       const ql = JSON.parse(s.quality_latest || '{}');
-      const reason = val.price_percentile > 85 ? '价格处于近3年高位' : s.quality_score < 30 ? '基本面质量较差' : '';
+      const reason = val.price_percentile > 85 ? '价格处于近2年高位' : s.quality_score < 30 ? '基本面质量较差' : '';
       report += `- ${s.stock_name}（${s.code}）综合${s.total_score}分 | PE ${val.current_pe || 'N/A'} | 价格位${val.price_percentile}% | ${reason}\n`;
     });
     report += `\n`;
