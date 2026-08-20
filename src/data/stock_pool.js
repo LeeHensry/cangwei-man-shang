@@ -37,19 +37,38 @@ async function updateUniverse() {
       console.log(`[universe] 腾讯降级拉取到 ${allStocks.length} 只股票`);
     } catch(e2) {
       console.error('[universe] 腾讯也失败:', e2.message);
-      throw new Error('数据源全部不可用');
     }
+  }
+  // 如果数据源全部失败，用静态JSON兜底
+  if (!allStocks || allStocks.length === 0) {
+    console.log('[universe] 数据源全部失败，用静态JSON兜底');
+    allStocks = BUILTIN_UNIVERSE.map(c => {
+      const code = String(c).replace(/^(sh|sz|bj)/, '');
+      return { code, name: '', market: code.startsWith('6') ? 'SH' : 'SZ', total_mv: 0, circ_mv: 0, close: 0, pct_chg: 0, amount: 0, is_st: 0 };
+    });
   }
 
   // 过滤：排除ST、退市、价格<2元、北交所
-  const filtered = allStocks.filter(s => {
+  let filtered = allStocks.filter(s => {
     if (s.is_st) return false;
     if (s.market === 'BJ') return false;
-    if (!s.close || s.close < 2) return false;
+    if (s.close && s.close > 0 && s.close < 2) return false;
     if (s.name && (s.name.includes('退') || s.name.includes('ST'))) return false;
     return true;
   });
   console.log(`[universe] 过滤后剩余 ${filtered.length} 只`);
+
+  // 如果拉取数量太少（<500），用静态JSON补充
+  if (filtered.length < 500) {
+    console.log(`[universe] 拉取数量不足(${filtered.length})，用静态JSON补充`);
+    const builtinCodes = BUILTIN_UNIVERSE.map(c => String(c).replace(/^(sh|sz|bj)/, ''));
+    const existingCodes = new Set(filtered.map(s => s.code));
+    const supplement = builtinCodes
+      .filter(c => !existingCodes.has(c))
+      .map(c => ({ code: c, name: '', market: c.startsWith('6') ? 'SH' : 'SZ', total_mv: 0, circ_mv: 0, close: 0, pct_chg: 0, amount: 0, is_st: 0 }));
+    filtered = [...filtered, ...supplement];
+    console.log(`[universe] 补充后共 ${filtered.length} 只`);
+  }
 
   // 按总市值降序排序，取Top 1000
   filtered.sort((a, b) => (b.total_mv || 0) - (a.total_mv || 0));

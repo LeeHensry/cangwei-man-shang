@@ -202,7 +202,7 @@ app.post('/api/sync', async (req, res) => {
   if (syncRunning) return res.json({ status: 'running', message: '同步正在进行中' });
   syncRunning = true;
   syncStartTime = Date.now();
-  const syncMode = req.body?.mode || 'incremental';
+  const syncMode = req.body?.mode || req.query?.mode || 'incremental';
   const waitForComplete = req.body?.wait === true || req.query?.wait === '1';
 
   const doSync = (async () => {
