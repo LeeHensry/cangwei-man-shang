@@ -1,6 +1,6 @@
 {
   "name": "stock-advisor",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "🥃 仓位满上 Top Up - A股智能决策辅助系统",
   "main": "server.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "dayjs": "^1.11.21",
     "express": "^5.2.1",
     "iconv-lite": "^0.7.3",
-    "node-cron": "^4.6.0"
+    "node-cron": "^4.6.0",
+    "pg": "^8.23.0"
   }
 }

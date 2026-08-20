@@ -1,34 +1,128 @@
 /**
  * 动态股票池管理
  * 设计：
- * - 覆盖大中盘约1000只股票（内置名单+用户自选+热门股）
- * - 每周扫描一次全市场，按流动性（成交额/换手率）+ 动量 + 市值 综合打分
- * - 选出 top 200 只作为重点关注池，后续评分/信号只对这200只做深度分析
+ * - Universe：从全市场动态筛选 Top 1000 只（按市值降序，排除ST/退市/价格<2元），每月更新
+ * - Pool：从 Universe 中按流动性+动量+市值综合打分，选 Top 200 作为重点关注池
  * - 用户自选股票始终入池，不受筛选淘汰
  */
 const { dbGet, dbAll, dbRun, dbBatch } = require('./db');
 const ds = require('./datasources');
 const dayjs = require('dayjs');
 
-// 内置大中盘股票池（约970只，沪市主板/科创板/深市主板/创业板龙头活跃股）
+// 静态内置池作为兜底（首次启动/数据库为空时使用）
 const BUILTIN_UNIVERSE = require('../../data/stock_universe.json');
 
-// 注意：建表已由 db.js 统一处理，此处不再执行 db.exec
+const UNIVERSE_SIZE = 1000;  // 动态Universe目标数量
+
+/**
+ * 从东方财富拉取全市场A股，按市值降序取Top 1000写入stock_universe表
+ * 建议每月执行一次
+ */
+async function updateUniverse() {
+  console.log(`[universe] 开始动态更新股票Universe，目标数量: ${UNIVERSE_SIZE}`);
+  const t0 = Date.now();
+  const tq = require('./datasources/tencent');
+
+  // 用东方财富接口拉全市场A股（已含市值、行情）
+  const em = require('./eastmoney');
+  let allStocks = [];
+  try {
+    allStocks = await em.getStockList();
+    console.log(`[universe] 东方财富拉取到 ${allStocks.length} 只股票`);
+  } catch(e) {
+    console.error('[universe] 东方财富拉取失败:', e.message);
+    // 降级：用腾讯接口
+    try {
+      allStocks = await tq.getStockList();
+      console.log(`[universe] 腾讯降级拉取到 ${allStocks.length} 只股票`);
+    } catch(e2) {
+      console.error('[universe] 腾讯也失败:', e2.message);
+      throw new Error('数据源全部不可用');
+    }
+  }
+
+  // 过滤：排除ST、退市、价格<2元、北交所
+  const filtered = allStocks.filter(s => {
+    if (s.is_st) return false;
+    if (s.market === 'BJ') return false;
+    if (!s.close || s.close < 2) return false;
+    if (s.name && (s.name.includes('退') || s.name.includes('ST'))) return false;
+    return true;
+  });
+  console.log(`[universe] 过滤后剩余 ${filtered.length} 只`);
+
+  // 按总市值降序排序，取Top 1000
+  filtered.sort((a, b) => (b.total_mv || 0) - (a.total_mv || 0));
+  const topStocks = filtered.slice(0, UNIVERSE_SIZE);
+  console.log(`[universe] 按市值取Top ${topStocks.length} 只`);
+
+  // 写入数据库
+  const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+
+  // 先标记所有为不在universe
+  await dbRun(`UPDATE stock_universe SET in_universe = 0, updated_at = ?`, [now]);
+
+  // 批量插入/更新
+  const batchStmts = topStocks.map(s => ({
+    sql: `INSERT OR REPLACE INTO stock_universe
+      (code, name, market, total_mv, circ_mv, close, pct_chg, amount, is_st, updated_at, in_universe)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      String(s.code).replace(/^(sh|sz|bj)/, ''),
+      s.name,
+      s.market,
+      s.total_mv || null,
+      s.circ_mv || null,
+      s.close || null,
+      s.pct_chg || null,
+      s.amount || null,
+      s.is_st || 0,
+      now,
+      1
+    ]
+  }));
+
+  for (let i = 0; i < batchStmts.length; i += 200) {
+    await dbBatch(batchStmts.slice(i, i + 200));
+  }
+
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`[universe] ✅ 更新完成，共 ${topStocks.length} 只，耗时 ${elapsed}s`);
+  return { total: topStocks.length, elapsed: Date.now() - t0 };
+}
+
+/**
+ * 获取当前Universe股票代码列表（优先读数据库动态表，降级读静态JSON）
+ */
+async function getUniverseCodes() {
+  try {
+    const rows = await dbAll(`SELECT code FROM stock_universe WHERE in_universe = 1`);
+    if (rows && rows.length > 0) {
+      return rows.map(r => r.code);
+    }
+  } catch(e) {
+    console.log('[universe] 读数据库失败，降级静态JSON:', e.message);
+  }
+  // 降级：静态JSON
+  return BUILTIN_UNIVERSE.map(c => String(c).replace(/^(sh|sz|bj)/, ''));
+}
 
 /**
  * 执行股票池更新（每周一执行）
+ * 从动态Universe中按流动性+动量+市值综合打分，选Top 200
  * @param {number} targetSize 目标股票池大小，默认200
  */
 async function updateStockPool(targetSize = 200) {
   console.log('[pool] 开始更新股票池，目标数量:', targetSize);
   const t0 = Date.now();
 
-  // 1. 构建待扫描股票名单：内置universe + 已有池内股票（含手动添加）+ portfolio里的股票
+  // 1. 构建待扫描股票名单：动态Universe + 已有池内股票（含手动添加）+ portfolio里的股票
+  const universeCodes = await getUniverseCodes();
   const manualRows = await dbAll(`SELECT code, name FROM stock_pool WHERE is_manual = 1`);
   const manualCodes = manualRows.map(r => r.code);
   const portfolioRows = await dbAll(`SELECT DISTINCT code FROM portfolio WHERE status='holding'`);
   const portfolioCodes = portfolioRows.map(r => r.code);
-  const universeSet = new Set([...BUILTIN_UNIVERSE, ...manualCodes, ...portfolioCodes]);
+  const universeSet = new Set([...universeCodes, ...manualCodes, ...portfolioCodes]);
   // 保证所有代码格式正确（sh/sz前缀）
   const allCodes = [...universeSet].map(toTencentCode);
   console.log(`[pool] 待扫描股票: ${allCodes.length} 只`);
@@ -186,4 +280,4 @@ function toTencentCode(code) {
   return 'sz' + code;
 }
 
-module.exports = { updateStockPool, getPoolCodes, addToPool, toTencentCode, BUILTIN_UNIVERSE };
+module.exports = { updateUniverse, getUniverseCodes, updateStockPool, getPoolCodes, addToPool, toTencentCode, BUILTIN_UNIVERSE };

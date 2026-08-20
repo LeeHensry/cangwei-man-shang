@@ -14,4 +14,6 @@
 - **Render环境变量**：TURSO_AUTH_TOKEN和TURSO_DATABASE_URL用户已在Dashboard配置，db.js已移除硬编码token改为纯process.env读取
 - **Render时区坑**：服务器时间为UTC，node-cron表达式必须写UTC时间（北京时间-8小时）。Render免费版进程在无外部请求时会被suspend，setInterval/setTimeout在休眠期间不执行，必须靠外部HTTP请求（如GitHub Actions）保活才能让cron按时触发
 - **保活方案**：GitHub Actions每10分钟curl `/api/version`（.github/workflows/keep-alive.yml）
-- **当前版本**：v1.5.2
+- **当前版本**：v1.6.0
+- **动态Universe**：v1.6.0新增stock_universe表，从全市场按市值降序动态筛选Top 1000只（排除ST/退市/北交所/价格<2元），月初自动更新；股票池(200只)从Universe中按流动性45%+市值30%+动量25%综合打分选出；静态JSON保留作降级兜底
+- **数据库迁移**：v1.6.0从Turso(SQLite)迁移到Supabase(PostgreSQL)，db.js内置SQL方言转换器（?→$N, INSERT OR REPLACE→ON CONFLICT），环境变量SUPABASE_DB_URL；本地开发仍用better-sqlite3

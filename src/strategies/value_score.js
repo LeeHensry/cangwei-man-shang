@@ -886,17 +886,19 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
   }
   
   // 保存
-  const columns = ['code', 'name', 'trade_date', 'strategy', 'quality_score', 'valuation_score',
+  const baseColumns = ['code', 'name', 'trade_date', 'strategy', 'quality_score', 'valuation_score',
     'technical_score', 'total_score', 'signal', 'current_price', 'target_price', 'stop_loss',
     'position_pct', 'quality_detail', 'quality_latest', 'valuation_detail', 'technical_detail', 'reason'];
-  
+  const allColumns = [...baseColumns, 'fund_score', 'sentiment_score', 'crowding_score', 'crowding_level'];
+
   const insertSql = `INSERT OR REPLACE INTO stock_score
-    (${columns.join(',')}, fund_score, sentiment_score, crowding_score, crowding_level) VALUES (${columns.map(()=>'?').join(',')}, 0, 0, ?, ?)`;
-  
+    (${allColumns.join(',')}) VALUES (${allColumns.map(()=>'?').join(',')})`;
+
   const stmts = results.map(r => ({
     sql: insertSql,
     args: [
-      ...columns.map(c => r[c] ?? null),
+      ...baseColumns.map(c => r[c] ?? null),
+      0, 0,
       r.crowding_score ?? null,
       r.crowding_level ?? null
     ]

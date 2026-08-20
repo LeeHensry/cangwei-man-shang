@@ -22,7 +22,7 @@ if (!process.env.TURSO_AUTH_TOKEN) {
   })();
 }
 
-const { dbGet, dbAll, dbRun, dbBatch, dbIsReady, useTurso, client } = require('./src/data/db');
+const { dbGet, dbAll, dbRun, dbBatch, dbIsReady, usePostgres, useTurso, client } = require('./src/data/db');
 const stockPool = require('./src/data/stock_pool');
 const ds = require('./src/data/datasources');
 const tq = ds;
@@ -570,6 +570,23 @@ app.post('/api/stock-pool/refresh', async (req, res) => {
   catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// 动态Universe更新（每月执行一次，或手动触发）
+app.post('/api/universe/refresh', async (req, res) => {
+  try {
+    const result = await stockPool.updateUniverse();
+    res.json({ ok: true, ...result });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 查看Universe状态
+app.get('/api/universe/stats', async (req, res) => {
+  try {
+    const stats = await dbGet(`SELECT COUNT(*) as total, SUM(in_universe) as active FROM stock_universe`);
+    const lastUpdate = await dbGet(`SELECT MAX(updated_at) as t FROM stock_universe`);
+    res.json({ total: stats.total, active: stats.active || 0, lastUpdate: lastUpdate.t });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/stock-pool/add', async (req, res) => {
   try {
     const { code, name } = req.body;
@@ -671,7 +688,7 @@ app.post('/api/portfolio', async (req, res) => {
     const score = await dbGet(`SELECT * FROM stock_score WHERE code=? AND strategy=? ORDER BY trade_date DESC LIMIT 1`, [code, strategy]);
     const stopLoss = +(buy_price * 0.85).toFixed(2);
     const targetPrice = score?.total_score >= 70 ? +(buy_price * 1.3).toFixed(2) : null;
-    await dbRun(`INSERT OR REPLACE INTO portfolio (code,name,strategy,buy_date,buy_price,shares,stop_loss,target_price,status) VALUES (?,?,?,?,?,?,?,?,'holding')`, [code, stockName, strategy, buy_date || new Date().toISOString().slice(0,10), buy_price, shares, stopLoss, targetPrice]);
+    await dbRun(`INSERT OR REPLACE INTO portfolio (code,name,strategy,buy_date,buy_price,shares,stop_loss,target_price,status) VALUES (?,?,?,?,?,?,?,?,?)`, [code, stockName, strategy, buy_date || new Date().toISOString().slice(0,10), buy_price, shares, stopLoss, targetPrice, 'holding']);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -829,6 +846,23 @@ cron.schedule('30 16 * * 0', async () => {
   try { const r = await stockPool.updateStockPool(200); console.log('[cron] 股票池更新完成:', r); } catch(e) { console.log('[cron] 股票池更新失败:', e.message); }
 });
 
+// 每月1号凌晨00:00(北京时间)更新动态Universe = UTC上月最后一天16:00
+cron.schedule('0 16 28-31 * *', async () => {
+  // 取每月最后一天的UTC16:00 = 北京时间次月1号00:00
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  if (tomorrow.getUTCDate() === 1) {
+    console.log('[cron] 月初，开始更新动态Universe...');
+    try {
+      const r = await stockPool.updateUniverse();
+      console.log('[cron] Universe更新完成:', r);
+      // Universe更新后立即刷新股票池
+      const r2 = await stockPool.updateStockPool(200);
+      console.log('[cron] 股票池刷新完成:', r2);
+    } catch(e) { console.log('[cron] Universe更新失败:', e.message); }
+  }
+});
+
 // 工作日盘中增量同步（北京时间：10:00开盘、11:30午盘、14:00下午盘）
 // 注意：cron使用UTC时间，北京时间 = UTC+8
 cron.schedule('0 2 * * 1-5', () => runAutoSync('incremental'));   // UTC 02:00 = 北京10:00
@@ -866,7 +900,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log('  🥃 仓位满上 Top Up  服务已启动');
   console.log('  API地址: http://0.0.0.0:' + PORT);
   console.log('  时间: ' + dayjs().format('YYYY-MM-DD HH:mm:ss'));
-  console.log('  数据库: ' + (useTurso ? 'Turso云数据库' : '本地SQLite'));
+  console.log('  数据库: ' + (usePostgres ? 'Supabase/PostgreSQL' : (useTurso ? 'Turso云数据库' : '本地SQLite')));
   console.log('═══════════════════════════════════════');
   
   try { await dbIsReady(); } catch(e) { console.log('[init] 数据库初始化等待失败:', e.message); }
@@ -877,6 +911,18 @@ app.listen(PORT, '0.0.0.0', async () => {
   try { userSettings = await loadSettings(); console.log('[init] 设置已加载'); } catch(e) { console.log('[init] 设置加载失败:', e.message); }
 
   await ensureSeedData();
+
+  // 初始化动态Universe（如果数据库中为空）
+  try {
+    const uniRow = await dbGet('SELECT COUNT(*) as c FROM stock_universe WHERE in_universe=1');
+    if (uniRow.c < 100) {
+      console.log('[init] 动态Universe为空，开始从全市场拉取...');
+      const r = await stockPool.updateUniverse();
+      console.log(`[init] Universe更新完成: ${r.total}只`);
+    } else {
+      console.log(`[init] Universe已有 ${uniRow.c} 只`);
+    }
+  } catch(e) { console.log('[init] Universe初始化失败:', e.message); }
 
   // 初始化股票池
   try {
