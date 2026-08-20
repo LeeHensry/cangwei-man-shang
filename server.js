@@ -598,19 +598,34 @@ async function runStepKline(startTime, batchSize, full) {
   }
 
   while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
-    const code = state.codes[state.offset];
-    try {
-      const klines = await tq.getDailyKline(code, klineStart, klineEnd);
-      if (klines.length > 0) {
-        for (let j = 0; j < klines.length; j += 200) {
-          await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
-        }
-        klineCount += klines.length;
+    // 并发拉取3只股票的K线，减少网络等待
+    const concurrency = Math.min(3, batchSize - processed, state.total - state.offset);
+    const batch = [];
+    for (let c = 0; c < concurrency; c++) {
+      const code = state.codes[state.offset + c];
+      batch.push(tq.getDailyKline(code, klineStart, klineEnd).catch(e => ({ code, error: e, klines: [] })));
+    }
+    const results = await Promise.all(batch);
+    // 收集所有K线一次性批量写入
+    const allKlines = [];
+    for (let r = 0; r < results.length; r++) {
+      const klines = results[r];
+      const code = state.codes[state.offset + r];
+      if (Array.isArray(klines) && klines.length > 0) {
+        allKlines.push(...klines);
+      } else if (klines?.error) {
+        errors++;
       }
-    } catch(e) { errors++; }
-    state.offset++;
-    processed++;
-    await tq.sleep(100);
+      state.offset++;
+      processed++;
+    }
+    if (allKlines.length > 0) {
+      for (let j = 0; j < allKlines.length; j += 500) {
+        await dbBatch(allKlines.slice(j, j + 500).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
+      }
+      klineCount += allKlines.length;
+    }
+    await tq.sleep(50);
   }
 
   state.done = state.offset >= state.total;
