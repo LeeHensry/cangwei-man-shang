@@ -299,4 +299,195 @@ function toTencentCode(code) {
   return 'sz' + code;
 }
 
-module.exports = { updateUniverse, getUniverseCodes, updateStockPool, getPoolCodes, addToPool, toTencentCode, BUILTIN_UNIVERSE };
+/**
+ * 分批更新股票池（避免Render suspend）
+ * 每次调用处理一批，可多次调用直到done
+ * @param {number} targetSize 目标股票池大小
+ * @param {number} startTime 开始时间戳，用于超时控制
+ */
+async function updateStockPoolBatch(targetSize = 200, startTime = 0) {
+  const TIMEOUT = 45000; // 45秒超时
+  const BATCH_QUOTE_SIZE = 50; // 每批拉50只行情
+
+  // 第一次调用时初始化（用内存静态变量维护状态）
+  if (!updateStockPoolBatch._state || updateStockPoolBatch._state.done) {
+    const universeCodes = await getUniverseCodes();
+    const manualRows = await dbAll(`SELECT code, name FROM stock_pool WHERE is_manual = 1`);
+    const manualCodes = manualRows.map(r => r.code);
+    const portfolioRows = await dbAll(`SELECT DISTINCT code FROM portfolio WHERE status='holding'`);
+    const portfolioCodes = portfolioRows.map(r => r.code);
+    const universeSet = new Set([...universeCodes, ...manualCodes, ...portfolioCodes]);
+    const allCodes = [...universeSet].map(toTencentCode);
+
+    updateStockPoolBatch._state = {
+      allCodes,
+      allCodesRaw: [...universeSet],
+      manualCodes,
+      portfolioCodes,
+      targetSize,
+      offset: 0,
+      quotes: [],
+      done: false,
+    };
+    console.log(`[pool-batch] 初始化，待扫描 ${allCodes.length} 只`);
+  }
+
+  const state = updateStockPoolBatch._state;
+  let processed = 0;
+
+  // 分批拉取行情
+  while (state.offset < state.allCodes.length && processed < BATCH_QUOTE_SIZE) {
+    const batch = state.allCodes.slice(state.offset, state.offset + BATCH_QUOTE_SIZE);
+    try {
+      const batchQuotes = await ds.getQuickStockList(batch);
+      const cleaned = batchQuotes.map(q => ({ ...q, code: String(q.code).replace(/^(sh|sz|bj)/, '') }));
+      state.quotes.push(...cleaned);
+      processed += batch.length;
+    } catch(e) {
+      console.log(`[pool-batch] 行情拉取失败(offset=${state.offset}):`, e.message);
+      // 即使失败也推进offset
+      processed += batch.length;
+    }
+    state.offset += batch.length;
+
+    // 超时检查
+    if (startTime > 0 && Date.now() - startTime > TIMEOUT) break;
+    await ds.sleep(50);
+  }
+
+  console.log(`[pool-batch] 进度: ${state.offset}/${state.allCodes.length}，已获取行情 ${state.quotes.length} 只`);
+
+  // 如果还没拉完，返回未完成
+  if (state.offset < state.allCodes.length) {
+    return {
+      done: false,
+      progress: `${state.offset}/${state.allCodes.length}`,
+      progressPct: Math.round(state.offset / state.allCodes.length * 100),
+      quotesSoFar: state.quotes.length,
+    };
+  }
+
+  // 全部行情拉完，开始打分筛选
+  console.log(`[pool-batch] 行情拉取完成(${state.quotes.length}只)，开始打分筛选...`);
+
+  // 拉取K线计算动量（只处理前300只高流动性）
+  const momentumMap = {};
+  const klineCodes = state.quotes.slice(0, Math.min(state.quotes.length, 300));
+  for (let i = 0; i < klineCodes.length; i++) {
+    const q = klineCodes[i];
+    try {
+      const kl = await ds.getDailyKline(q.code, dayjs().subtract(30, 'day').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD'));
+      if (kl && kl.length >= 15) {
+        const closes = kl.map(k => k.close).filter(c => c > 0);
+        if (closes.length >= 10) {
+          const ret = (closes[closes.length - 1] - closes[0]) / closes[0];
+          momentumMap[q.code] = ret;
+        }
+      }
+    } catch(e) {}
+    if (i % 50 === 0) await ds.sleep(80);
+    // 超时检查
+    if (startTime > 0 && Date.now() - startTime > TIMEOUT * 1.5) {
+      console.log(`[pool-batch] 动量计算超时，已处理 ${i}/${klineCodes.length}`);
+      break;
+    }
+  }
+
+  // 打分与筛选
+  const scored = state.quotes.map(q => {
+    if (q.is_st) return null;
+    if (!q.close || q.close < 2) return null;
+    const amountYi = (q.amount || 0) / 10000;
+    if (amountYi < 0.5) return null;
+
+    const volScore = Math.min(100, Math.max(0, Math.log10(Math.max(1, amountYi)) * 25 + 10));
+    const ret = momentumMap[q.code];
+    let momScore = 50;
+    if (ret !== undefined) {
+      if (ret > 0.5) momScore = 40;
+      else if (ret > 0.2) momScore = 75;
+      else if (ret > -0.05) momScore = 60;
+      else if (ret > -0.2) momScore = 45;
+      else momScore = 25;
+    }
+    let mvScore = 50;
+    const mv = q.total_mv || 0;
+    if (mv > 0) {
+      if (mv > 5000) mvScore = 90;
+      else if (mv > 1000) mvScore = 80;
+      else if (mv > 300) mvScore = 70;
+      else if (mv > 100) mvScore = 55;
+      else if (mv > 50) mvScore = 40;
+      else mvScore = 20;
+    }
+
+    const total = +(volScore * 0.45 + momScore * 0.25 + mvScore * 0.3).toFixed(1);
+
+    return {
+      code: q.code, name: q.name,
+      amount_yi: +amountYi.toFixed(2),
+      pct_chg: q.pct_chg, close: q.close, total_mv: q.total_mv,
+      ret_20d: ret !== undefined ? +(ret * 100).toFixed(1) : null,
+      vol_score: +volScore.toFixed(0),
+      mom_score: momScore,
+      mv_score: mvScore,
+      score: total,
+      is_manual: state.manualCodes.includes(q.code) || state.portfolioCodes.includes(q.code) ? 1 : 0,
+    };
+  }).filter(Boolean);
+
+  // 如果打分结果太少（行情数据不完整），用Universe直接入池
+  let finalPool;
+  if (scored.length < 50) {
+    console.log(`[pool-batch] 打分结果仅${scored.length}只，用Universe直接入池`);
+    finalPool = state.allCodesRaw.slice(0, state.targetSize).map((code, idx) => ({
+      code, name: '', score: 50 - idx * 0.01,
+      is_manual: state.manualCodes.includes(code) || state.portfolioCodes.includes(code) ? 1 : 0,
+      vol_score: 50, mom_score: 50, mv_score: 50,
+    }));
+  } else {
+    const manualStocks = scored.filter(s => s.is_manual);
+    const autoPool = scored.filter(s => !s.is_manual).sort((a, b) => b.score - a.score)
+                           .slice(0, Math.max(0, state.targetSize - manualStocks.length));
+    finalPool = [...manualStocks, ...autoPool];
+  }
+
+  // 写入数据库
+  const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+  const todayShort = dayjs().format('YYYY-MM-DD');
+
+  if (finalPool.length > 0) {
+    const placeholders = finalPool.map(() => '?').join(',');
+    await dbRun(`UPDATE stock_pool SET in_pool = 0, updated_at = ? WHERE code NOT IN (${placeholders})`, [now, ...finalPool.map(s => s.code)]);
+  }
+
+  const batchStmts = finalPool.map(s => {
+    const reason = s.is_manual ? '手动/持仓' :
+      `流动性${s.vol_score} 动量${s.mom_score} 市值${s.mv_score}`;
+    return {
+      sql: `INSERT OR REPLACE INTO stock_pool
+        (code, name, in_pool, is_manual, pool_score, pool_reason, score_volume, score_momentum,
+         last_trade_date, updated_at, in_pool_date)
+        VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT in_pool_date FROM stock_pool WHERE code = ?), ?))`,
+      args: [s.code, s.name || s.code, s.is_manual, s.score, reason, s.vol_score, s.mom_score,
+                todayShort, now, s.code, todayShort]
+    };
+  });
+
+  for (let i = 0; i < batchStmts.length; i += 200) {
+    await dbBatch(batchStmts.slice(i, i + 200));
+  }
+
+  state.done = true;
+  console.log(`[pool-batch] ✅ 股票池更新完成，共 ${finalPool.length} 只`);
+
+  return {
+    done: true,
+    total: finalPool.length,
+    scored: scored.length,
+    progress: '100%',
+    progressPct: 100,
+  };
+}
+
+module.exports = { updateUniverse, getUniverseCodes, updateStockPool, updateStockPoolBatch, getPoolCodes, addToPool, toTencentCode, BUILTIN_UNIVERSE };

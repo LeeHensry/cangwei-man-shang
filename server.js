@@ -310,6 +310,343 @@ app.post('/api/sync', async (req, res) => {
   }
 });
 
+// ========== 分步同步 API ==========
+// 解决Render免费版suspend问题：每个step在50秒内完成一批，可反复调用
+// 前端/GitHub Actions通过轮询逐步完成全量同步
+
+const SYNC_STEP_TIMEOUT = 50000; // 50秒超时，留足Render响应时间
+const SYNC_BATCH_SIZE = 20;      // 每批处理20只股票的K线
+
+// 通用分步同步状态（内存中维护，进程重启后从DB推断）
+let stepSyncState = {
+  kline: { offset: 0, total: 0, codes: [], done: false },
+  indicators: { offset: 0, total: 0, codes: [], done: false },
+};
+
+function getTimeLeft(startTime) {
+  return SYNC_STEP_TIMEOUT - (Date.now() - startTime);
+}
+
+app.post('/api/sync/step', async (req, res) => {
+  const step = req.body?.step || req.query?.step;
+  const batchSize = parseInt(req.body?.batchSize || req.query?.batchSize) || SYNC_BATCH_SIZE;
+
+  if (!step) return res.status(400).json({ error: '缺少step参数' });
+
+  try {
+    const startTime = Date.now();
+    let result = {};
+
+    if (step === 'kline') {
+      // === K线分批同步 ===
+      // 如果是第一次调用或codes为空，初始化
+      if (stepSyncState.kline.codes.length === 0 || stepSyncState.kline.done) {
+        let codes = await stockPool.getPoolCodes();
+        if (codes.length === 0) {
+          const infoRows = await dbAll('SELECT code FROM stock_info');
+          codes = infoRows.map(r => r.code).filter(c => /^\d{6}$/.test(c));
+        }
+        if (codes.length === 0) {
+          // 用内置热门列表
+          codes = ['600519','000858','601318','600036','000333','600276','300750','601012','600900','601899','002594','601166','600030','000001','600887','601398','601288','600000','601988','600050','000725','600585','601668','601390','002475','300059','600438','002352','601888','600309','603288','000568','000596','600809','300124','002415','603501','688981','688012','688256','300760','002241','600048','601628','601601','600104','601857','600028','601088','600111','600547','601225','002460','300274'];
+        }
+        stepSyncState.kline = { offset: 0, total: codes.length, codes, done: false };
+      }
+
+      const state = stepSyncState.kline;
+      const klineHistoryDays = req.body?.full ? 1100 : 60;
+      const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
+      const klineEnd = dayjs().format('YYYY-MM-DD');
+      let processed = 0, klineCount = 0, errors = 0;
+
+      // 先拉取本批的实时行情
+      const batchCodes = state.codes.slice(state.offset, state.offset + batchSize * 5);
+      if (batchCodes.length > 0) {
+        try {
+          const quotes = await tq.getQuickStockList(batchCodes);
+          const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          const today = dayjs().format('YYYYMMDD');
+          const infoData = quotes.filter(q => q.code && q.name).map(q => ({
+            code: String(q.code).replace(/^(sh|sz|bj)/, ''),
+            name: q.name, market: q.market || (q.code.startsWith('6') ? 'SH' : 'SZ'),
+            is_st: q.is_st || (q.name && q.name.includes('ST') ? 1 : 0),
+            total_mv: q.total_mv, circ_mv: q.circ_mv
+          }));
+          await dbBatch(infoData.map(r => ({ sql: `INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`, args: [r.code, r.name, r.market, r.is_st, r.total_mv, r.circ_mv, nowStr] })));
+          const valData = quotes.filter(q => q.code && q.pe != null).map(q => ({
+            code: String(q.code).replace(/^(sh|sz|bj)/, ''), today, pe: q.pe
+          }));
+          if (valData.length > 0) await dbBatch(valData.map(r => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [r.code, r.today, r.pe] })));
+        } catch(e) { console.log('[step:kline] 行情拉取失败:', e.message); }
+      }
+
+      // 拉取K线
+      while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+        const code = state.codes[state.offset];
+        try {
+          const klines = await tq.getDailyKline(code, klineStart, klineEnd);
+          if (klines.length > 0) {
+            for (let j = 0; j < klines.length; j += 200) {
+              await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
+            }
+            klineCount += klines.length;
+          }
+        } catch(e) { errors++; }
+        state.offset++;
+        processed++;
+        await tq.sleep(100);
+      }
+
+      state.done = state.offset >= state.total;
+      result = {
+        step: 'kline', processed, klineCount, errors,
+        progress: `${state.offset}/${state.total}`,
+        progressPct: Math.round(state.offset / state.total * 100),
+        done: state.done,
+        timeElapsed: Date.now() - startTime,
+      };
+
+      if (state.done) {
+        stepSyncState.kline = { offset: 0, total: 0, codes: [], done: false };
+      }
+    } else if (step === 'indicators') {
+      // === 技术指标分批计算 ===
+      if (stepSyncState.indicators.codes.length === 0 || stepSyncState.indicators.done) {
+        const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
+        stepSyncState.indicators = { offset: 0, total: allCodeRows.length, codes: allCodeRows.map(r => r.code), done: false };
+      }
+
+      const state = stepSyncState.indicators;
+      const indBatchSize = batchSize * 3; // 指标计算是本地操作，可以快一些
+      let processed = 0, indCount = 0;
+
+      while (state.offset < state.total && processed < indBatchSize && getTimeLeft(startTime) > 5000) {
+        const code = state.codes[state.offset];
+        try {
+          const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+          if (ks.length >= 25) {
+            const inds = calcAllIndicators(ks);
+            const validInds = inds.filter(r => r.ma5 !== null);
+            for (let j = 0; j < validInds.length; j += 200) {
+              await dbBatch(validInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+            }
+            indCount++;
+          }
+        } catch(e) {}
+        state.offset++;
+        processed++;
+      }
+
+      state.done = state.offset >= state.total;
+      result = {
+        step: 'indicators', processed, indCount,
+        progress: `${state.offset}/${state.total}`,
+        progressPct: Math.round(state.offset / state.total * 100),
+        done: state.done,
+        timeElapsed: Date.now() - startTime,
+      };
+
+      if (state.done) {
+        stepSyncState.indicators = { offset: 0, total: 0, codes: [], done: false };
+      }
+    } else if (step === 'score') {
+      // === 评分（含财务数据补全）===
+      // 评分本身是一步完成，但可以限制只处理部分股票
+      const fullScore = req.body?.full !== false;
+      await scoreAllStocks(fullScore, fullScore, userSettings);
+      result = { step: 'score', done: true, timeElapsed: Date.now() - startTime };
+
+      // 评分后顺便算短线信号
+      try { await calcAllShortSignals(); } catch(e) { console.log('[step:score] 短线信号失败:', e.message); }
+
+    } else if (step === 'crowding') {
+      // === 拥挤度计算 ===
+      await calcAllCrowding();
+      result = { step: 'crowding', done: true, timeElapsed: Date.now() - startTime };
+
+    } else if (step === 'pool') {
+      // === 股票池刷新（分批拉行情）===
+      const r = await stockPool.updateStockPoolBatch(200, startTime);
+      result = { step: 'pool', done: r.done, ...r, timeElapsed: Date.now() - startTime };
+
+    } else if (step === 'status') {
+      // 查询当前同步状态
+      const poolCount = (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0;
+      const stockCount = (await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0;
+      const klineCount = (await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0;
+      const indCount = (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0;
+      const scoreCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0;
+      const crowdCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0;
+      const financeCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0;
+      result = {
+        step: 'status',
+        pool: poolCount, stocks: stockCount, klines: klineCount,
+        indicators: indCount, scores: scoreCount, crowding: crowdCount,
+        finance: financeCount,
+        klineSync: stepSyncState.kline.done ? 'idle' : `${stepSyncState.kline.offset}/${stepSyncState.kline.total}`,
+        indicatorSync: stepSyncState.indicators.done ? 'idle' : `${stepSyncState.indicators.offset}/${stepSyncState.indicators.total}`,
+      };
+
+    } else if (step === 'full-pipeline') {
+      // === 一键全流程（前端轮询调用，每次返回下一步）===
+      // 检查各模块状态，自动执行下一步
+      const status = await getSyncStatus();
+      let nextStep = null;
+      let stepResult = null;
+
+      if (status.pool < 100) {
+        // 先确保股票池有数据
+        const r = await stockPool.updateStockPoolBatch(200, startTime);
+        nextStep = r.done ? 'kline' : 'pool';
+        stepResult = { subStep: 'pool', ...r };
+      } else if (status.indicators === 0 && status.klines > 0) {
+        // 有K线但没指标→先算指标
+        nextStep = 'indicators';
+        // 执行一批指标计算
+        const r = await runStepIndicators(startTime, batchSize * 3);
+        stepResult = r;
+      } else if (status.klines < status.pool * 100) {
+        // K线不够→拉K线
+        nextStep = 'kline';
+        const r = await runStepKline(startTime, batchSize, req.body?.full);
+        stepResult = r;
+      } else if (status.indicators < status.pool && status.klines > 0) {
+        // 指标不够→算指标
+        nextStep = 'indicators';
+        const r = await runStepIndicators(startTime, batchSize * 3);
+        stepResult = r;
+      } else if (status.scores < status.pool) {
+        // 评分不够→评分
+        nextStep = 'score';
+        await scoreAllStocks(false, false, userSettings);
+        try { await calcAllShortSignals(); } catch(e) {}
+        stepResult = { subStep: 'score', done: true };
+      } else if (status.crowding < status.pool * 0.5) {
+        // 拥挤度不够→算拥挤度
+        nextStep = 'crowding';
+        await calcAllCrowding();
+        stepResult = { subStep: 'crowding', done: true };
+      } else {
+        // 全部完成
+        nextStep = null;
+        stepResult = { subStep: 'all-done', done: true };
+      }
+
+      result = { step: 'full-pipeline', nextStep, ...stepResult, status, timeElapsed: Date.now() - startTime };
+
+    } else {
+      return res.status(400).json({ error: `未知的step: ${step}` });
+    }
+
+    res.json(result);
+  } catch(e) {
+    console.error('[step-sync] 错误:', e);
+    res.status(500).json({ error: e.message, step: req.body?.step || req.query?.step });
+  }
+});
+
+// 辅助函数：获取同步状态摘要
+async function getSyncStatus() {
+  const poolCount = (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0;
+  const stockCount = (await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0;
+  const klineCount = (await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0;
+  const indCount = (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0;
+  const scoreCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0;
+  const crowdCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0;
+  return { pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount, scores: scoreCount, crowding: crowdCount };
+}
+
+// 辅助函数：执行一批K线同步
+async function runStepKline(startTime, batchSize, full) {
+  if (stepSyncState.kline.codes.length === 0 || stepSyncState.kline.done) {
+    let codes = await stockPool.getPoolCodes();
+    if (codes.length === 0) {
+      const infoRows = await dbAll('SELECT code FROM stock_info');
+      codes = infoRows.map(r => r.code).filter(c => /^\d{6}$/.test(c));
+    }
+    if (codes.length === 0) return { done: true, processed: 0, klineCount: 0 };
+    stepSyncState.kline = { offset: 0, total: codes.length, codes, done: false };
+  }
+
+  const state = stepSyncState.kline;
+  const klineHistoryDays = full ? 1100 : 60;
+  const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
+  const klineEnd = dayjs().format('YYYY-MM-DD');
+  let processed = 0, klineCount = 0, errors = 0;
+
+  // 行情
+  const batchCodes = state.codes.slice(state.offset, state.offset + batchSize * 5);
+  if (batchCodes.length > 0) {
+    try {
+      const quotes = await tq.getQuickStockList(batchCodes);
+      const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
+      const today = dayjs().format('YYYYMMDD');
+      const infoData = quotes.filter(q => q.code && q.name).map(q => ({
+        code: String(q.code).replace(/^(sh|sz|bj)/, ''),
+        name: q.name, market: q.market || (q.code.startsWith('6') ? 'SH' : 'SZ'),
+        is_st: q.is_st || (q.name && q.name.includes('ST') ? 1 : 0),
+        total_mv: q.total_mv, circ_mv: q.circ_mv
+      }));
+      await dbBatch(infoData.map(r => ({ sql: `INSERT OR REPLACE INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES (?,?,?,?,?,?,?)`, args: [r.code, r.name, r.market, r.is_st, r.total_mv, r.circ_mv, nowStr] })));
+      const valData = quotes.filter(q => q.code && q.pe != null).map(q => ({
+        code: String(q.code).replace(/^(sh|sz|bj)/, ''), today, pe: q.pe
+      }));
+      if (valData.length > 0) await dbBatch(valData.map(r => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [r.code, r.today, r.pe] })));
+    } catch(e) {}
+  }
+
+  while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+    const code = state.codes[state.offset];
+    try {
+      const klines = await tq.getDailyKline(code, klineStart, klineEnd);
+      if (klines.length > 0) {
+        for (let j = 0; j < klines.length; j += 200) {
+          await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
+        }
+        klineCount += klines.length;
+      }
+    } catch(e) { errors++; }
+    state.offset++;
+    processed++;
+    await tq.sleep(100);
+  }
+
+  state.done = state.offset >= state.total;
+  const r = { subStep: 'kline', processed, klineCount, errors, progress: `${state.offset}/${state.total}`, progressPct: Math.round(state.offset / state.total * 100), done: state.done };
+  if (state.done) stepSyncState.kline = { offset: 0, total: 0, codes: [], done: false };
+  return r;
+}
+
+// 辅助函数：执行一批指标计算
+async function runStepIndicators(startTime, batchSize) {
+  if (stepSyncState.indicators.codes.length === 0 || stepSyncState.indicators.done) {
+    const allCodeRows = await dbAll('SELECT DISTINCT code FROM daily_kline');
+    stepSyncState.indicators = { offset: 0, total: allCodeRows.length, codes: allCodeRows.map(r => r.code), done: false };
+  }
+  const state = stepSyncState.indicators;
+  let processed = 0, indCount = 0;
+  while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+    const code = state.codes[state.offset];
+    try {
+      const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+      if (ks.length >= 25) {
+        const inds = calcAllIndicators(ks);
+        const validInds = inds.filter(r => r.ma5 !== null);
+        for (let j = 0; j < validInds.length; j += 200) {
+          await dbBatch(validInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+        }
+        indCount++;
+      }
+    } catch(e) {}
+    state.offset++;
+    processed++;
+  }
+  state.done = state.offset >= state.total;
+  const r = { subStep: 'indicators', processed, indCount, progress: `${state.offset}/${state.total}`, progressPct: Math.round(state.offset / state.total * 100), done: state.done };
+  if (state.done) stepSyncState.indicators = { offset: 0, total: 0, codes: [], done: false };
+  return r;
+}
+
 // ========== 短线策略 API ==========
 const { calcShortSignal, calcAllShortSignals, getShortOpportunities } = require('./src/strategies/short_term');
 
@@ -865,12 +1202,19 @@ cron.schedule('0 16 28-31 * *', async () => {
 
 // 工作日盘中增量同步（北京时间：10:00开盘、11:30午盘、14:00下午盘）
 // 注意：cron使用UTC时间，北京时间 = UTC+8
+// 增量同步：快速行情+K线+评分（不重算指标和拥挤度）
 cron.schedule('0 2 * * 1-5', () => runAutoSync('incremental'));   // UTC 02:00 = 北京10:00
 cron.schedule('30 3 * * 1-5', () => runAutoSync('incremental'));  // UTC 03:30 = 北京11:30
 cron.schedule('0 6 * * 1-5', () => runAutoSync('incremental'));   // UTC 06:00 = 北京14:00
 
 // 收盘后全量同步（北京时间15:30）= UTC 07:30
-cron.schedule('30 7 * * 1-5', () => runAutoSync('full'));
+// 改为分步同步：先拉K线，后续指标/评分/拥挤度由GitHub Actions轮询触发
+cron.schedule('30 7 * * 1-5', async () => {
+  console.log('[cron] 收盘后同步：K线+行情+评分...');
+  await runAutoSync('incremental');
+  // 额外触发拥挤度计算
+  try { await calcAllCrowding(); } catch(e) { console.log('[cron] 拥挤度失败:', e.message); }
+});
 
 // 防休眠：每10分钟自ping，保持Render免费版不进入休眠
 // 这样工作日盘中cron任务才能按时触发
@@ -936,7 +1280,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     } else { console.log(`[init] 股票池已有 ${poolCountRow.c} 只，跳过更新`); }
   } catch(e) { console.log('[init] 股票池初始化失败:', e.message); }
 
-  // 后台尝试更新行情
+  // 后台尝试更新行情（轻量级，只拉行情+增量K线，不跑全量评分）
   (async () => {
     try {
       console.log('[init] 后台尝试更新行情...');
@@ -944,7 +1288,7 @@ app.listen(PORT, '0.0.0.0', async () => {
       if (codes.length === 0) { const infoRows = await dbAll('SELECT code FROM stock_info'); codes = infoRows.map(r => r.code).filter(c => /^\d{6}$/.test(c)); }
       if (codes.length === 0) throw new Error('无股票代码');
       const quotes = await Promise.race([
-        tq.getQuickStockList(codes.slice(0, 250)),
+        tq.getQuickStockList(codes.slice(0, 100)),
         new Promise((_, rej) => setTimeout(() => rej(new Error('行情拉取超时(20s)')), 20000)),
       ]);
       const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
@@ -955,17 +1299,15 @@ app.listen(PORT, '0.0.0.0', async () => {
       await dbBatch(valData.map(r => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [r.code, r.today, r.pe] })));
       console.log(`[init] 行情更新完成: ${quotes.length} 支`);
 
-      const poolCountRow = await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1');
+      // 只在评分数据完全缺失时做快速评分（不拉财务，不算拥挤度）
       const scoredRow = await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score');
-      const latestRow = await dbGet('SELECT MAX(trade_date) as d FROM stock_score');
-      const needScore = !latestRow?.d || scoredRow.c < poolCountRow.c * 0.7 || latestRow.d < dayjs().subtract(3,'day').format('YYYYMMDD');
-      if (needScore) {
-        console.log(`[init] 开始评分（覆盖${scoredRow.c}/${poolCountRow.c}只）...`);
-        await scoreAllStocks(true);
-        console.log('[init] 评分完成');
-      } else { console.log(`[init] 评分数据已是最新(${latestRow.d}, ${scoredRow.c}只)，跳过`); }
-      await calcAllCrowding();
-      console.log('[init] 拥挤度计算完成');
+      if (scoredRow.c === 0) {
+        console.log('[init] 无评分数据，快速评分中...');
+        await scoreAllStocks(false, false, userSettings);
+        console.log('[init] 快速评分完成');
+      } else {
+        console.log(`[init] 已有 ${scoredRow.c} 只评分数据，跳过`);
+      }
     } catch(e) { console.log('[init] 行情/评分更新跳过(可能API受限):', e.message); }
   })();
 });
