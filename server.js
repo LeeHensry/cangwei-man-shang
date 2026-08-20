@@ -257,7 +257,7 @@ app.post('/api/sync', async (req, res) => {
         indCount = 0;
         for (let i = 0; i < allCodes.length; i++) {
           const code = allCodes[i];
-          const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+          const ks = await dbAll(`SELECT trade_date,close,high,low,volume FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
           if (ks.length < 25) continue;
           const inds = calcAllIndicators(ks);
           const validInds = inds.filter(r => r.ma5 !== null);
@@ -423,12 +423,14 @@ app.post('/api/sync/step', async (req, res) => {
       while (state.offset < state.total && processed < indBatchSize && getTimeLeft(startTime) > 5000) {
         const code = state.codes[state.offset];
         try {
-          const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+          // 只查必要字段，减少远程DB传输量
+          const ks = await dbAll(`SELECT trade_date,close,high,low,volume FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
           if (ks.length >= 25) {
             const inds = calcAllIndicators(ks);
-            const validInds = inds.filter(r => r.ma5 !== null);
-            for (let j = 0; j < validInds.length; j += 200) {
-              await dbBatch(validInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+            // 只写入最近250天的指标，减少DB写入量
+            const recentInds = inds.slice(-250).filter(r => r.ma5 !== null);
+            for (let j = 0; j < recentInds.length; j += 200) {
+              await dbBatch(recentInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
             }
             indCount++;
           }
@@ -628,12 +630,12 @@ async function runStepIndicators(startTime, batchSize) {
   while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
     const code = state.codes[state.offset];
     try {
-      const ks = await dbAll(`SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
+      const ks = await dbAll(`SELECT trade_date,close,high,low,volume FROM daily_kline WHERE code = ? ORDER BY trade_date ASC`, [code]);
       if (ks.length >= 25) {
         const inds = calcAllIndicators(ks);
-        const validInds = inds.filter(r => r.ma5 !== null);
-        for (let j = 0; j < validInds.length; j += 200) {
-          await dbBatch(validInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+        const recentInds = inds.slice(-250).filter(r => r.ma5 !== null);
+        for (let j = 0; j < recentInds.length; j += 200) {
+          await dbBatch(recentInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
         }
         indCount++;
       }
@@ -1142,7 +1144,7 @@ async function runAutoSync(mode = 'incremental') {
       const allCodes = allCodeRows.map(r => r.code);
       let indCount = 0;
       for (let i = 0; i < allCodes.length; i++) {
-        const ks = await dbAll('SELECT * FROM daily_kline WHERE code = ? ORDER BY trade_date ASC', [allCodes[i]]);
+        const ks = await dbAll('SELECT trade_date,close,high,low,volume FROM daily_kline WHERE code = ? ORDER BY trade_date ASC', [allCodes[i]]);
         if (ks.length < 25) continue;
         const inds = calcAllIndicators(ks);
         const validInds = inds.filter(r => r.ma5 !== null);
