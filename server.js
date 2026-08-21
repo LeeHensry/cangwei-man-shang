@@ -671,7 +671,7 @@ app.post('/api/sync/step', async (req, res) => {
 
     } else if (step === 'crowding-batch') {
       // === 分批拥挤度计算 ===
-      if (!stepSyncState.crowding || stepSyncState.crowding.done) {
+      if (!stepSyncState.crowding || stepSyncState.crowding.done || stepSyncState.crowding.codes.length === 0) {
         const allCodeRows = await dbAll('SELECT code, name FROM stock_info WHERE is_st = 0');
         stepSyncState.crowding = { offset: 0, total: allCodeRows.length, codes: allCodeRows, done: false, sectorCache: {} };
       }
