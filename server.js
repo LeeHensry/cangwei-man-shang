@@ -238,8 +238,25 @@ app.post('/api/sync', async (req, res) => {
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
         try {
-          const klines = await emKline.getDailyKline(code, klineStart, klineEnd);
-          if (klines.length > 0) {
+          let klines = await emKline.getDailyKline(code, klineStart, klineEnd);
+          // 东方财富失败则回退到腾讯+计算换手率
+          if (!klines || klines.length === 0) {
+            const info = await dbGet('SELECT circ_mv FROM stock_info WHERE code = ?', [code]);
+            const tqKlines = await tq.getDailyKline(code, 
+              dayjs(klineStart).format('YYYY-MM-DD'), 
+              dayjs(klineEnd).format('YYYY-MM-DD')
+            );
+            if (tqKlines && tqKlines.length > 0) {
+              klines = tqKlines.map(k => {
+                let turnover = null;
+                if (info && info.circ_mv && info.circ_mv > 0 && k.close > 0 && k.volume > 0) {
+                  turnover = Math.round((k.volume * 100 * k.close / (info.circ_mv * 1e8) * 100) * 100) / 100;
+                }
+                return { ...k, turnover };
+              });
+            }
+          }
+          if (klines && klines.length > 0) {
             for (let j = 0; j < klines.length; j += 200) {
               await dbBatch(klines.slice(j, j+200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
             }
@@ -385,6 +402,7 @@ app.post('/api/sync/step', async (req, res) => {
       }
 
       // 拉取K线（full模式并发拉取提升效率）
+      // 策略：优先用东方财富（含turnover），失败则回退到腾讯+自行计算turnover
       const klineBatchSize = isFullMode ? 5 : batchSize;
       while (state.offset < state.total && processed < klineBatchSize && getTimeLeft(startTime) > 8000) {
         // 并发拉取本批K线（最多3只并发）
@@ -392,21 +410,73 @@ app.post('/api/sync/step', async (req, res) => {
         const concurrentBatch = Math.min(3, remaining, state.total - state.offset);
         const batchCodes = [];
         for (let b = 0; b < concurrentBatch; b++) {
-          batchCodes.push({ code: state.codes[state.offset + b], idx: state.offset + b });
+          batchCodes.push(state.codes[state.offset + b]);
         }
         
-        const klinePromises = batchCodes.map(bc => 
-          emKline.getDailyKline(bc.code, klineStart, klineEnd).catch(e => ({ code: bc.code, klines: [] }))
+        // 优先尝试东方财富K线（含换手率）
+        const emPromises = batchCodes.map(code => 
+          emKline.getDailyKline(code, klineStart, klineEnd).catch(e => [])
         );
-        const klineResults = await Promise.all(klinePromises);
+        const emResults = await Promise.all(emPromises);
         
-        for (const klines of klineResults) {
-          if (klines && klines.length > 0) {
-            for (let j = 0; j < klines.length; j += 200) {
-              await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
-            }
-            klineCount += klines.length;
+        // 对东方财富失败的股票，回退到腾讯K线并计算换手率
+        const fallbackCodes = [];
+        for (let i = 0; i < emResults.length; i++) {
+          if (!emResults[i] || emResults[i].length === 0) {
+            fallbackCodes.push(batchCodes[i]);
           }
+        }
+        
+        let fallbackResults = [];
+        if (fallbackCodes.length > 0) {
+          // 获取流通市值用于计算换手率
+          const circMvMap = {};
+          for (const fc of fallbackCodes) {
+            const info = await dbGet('SELECT circ_mv, total_mv FROM stock_info WHERE code = ?', [fc]);
+            if (info) circMvMap[fc] = info;
+          }
+          
+          const tqPromises = fallbackCodes.map(code => 
+            tq.getDailyKline(code, 
+              dayjs(klineStart).format('YYYY-MM-DD'), 
+              dayjs(klineEnd).format('YYYY-MM-DD')
+            ).catch(e => [])
+          );
+          const tqResults = await Promise.all(tqPromises);
+          
+          // 为腾讯K线计算换手率: turnover = volume(手) * 100 * close / (circ_mv * 1e8) * 100
+          fallbackResults = tqResults.map((klines, idx) => {
+            const code = fallbackCodes[idx];
+            const info = circMvMap[code];
+            if (!klines || klines.length === 0) return [];
+            return klines.map(k => {
+              let turnover = null;
+              if (info && info.circ_mv && info.circ_mv > 0 && k.close > 0 && k.volume > 0) {
+                // circ_mv是亿元，volume是手(100股/手)
+                // turnover(%) = volume(手) * 100(股/手) * close / (circ_mv * 1e8) * 100
+                turnover = Math.round((k.volume * 100 * k.close / (info.circ_mv * 1e8) * 100) * 100) / 100;
+              }
+              return { ...k, turnover };
+            });
+          });
+        }
+        
+        // 合并结果写入DB
+        const allKlines = [];
+        for (let i = 0; i < emResults.length; i++) {
+          if (emResults[i] && emResults[i].length > 0) {
+            allKlines.push(...emResults[i]);
+          }
+        }
+        for (const fr of fallbackResults) {
+          if (fr && fr.length > 0) allKlines.push(...fr);
+        }
+        
+        if (allKlines.length > 0) {
+          for (let j = 0; j < allKlines.length; j += 200) {
+            await dbBatch(allKlines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
+          }
+          klineCount += allKlines.length;
         }
         
         state.offset += concurrentBatch;
@@ -656,25 +726,46 @@ async function runStepKline(startTime, batchSize, full) {
   while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
     // 并发拉取3只股票的K线，减少网络等待
     const concurrency = Math.min(3, batchSize - processed, state.total - state.offset);
-    const batch = [];
+    const batchCodes = [];
     for (let c = 0; c < concurrency; c++) {
-      const code = state.codes[state.offset + c];
-      batch.push(emKline.getDailyKline(code, klineStart, klineEnd).catch(e => ({ code, error: e, klines: [] })));
+      batchCodes.push(state.codes[state.offset + c]);
     }
-    const results = await Promise.all(batch);
-    // 收集所有K线一次性批量写入
+    
+    // 优先用东方财富K线（含换手率）
+    const emPromises = batchCodes.map(code => 
+      emKline.getDailyKline(code, klineStart, klineEnd).catch(e => [])
+    );
+    const emResults = await Promise.all(emPromises);
+    
+    // 对东方财富失败的，回退到腾讯+计算换手率
     const allKlines = [];
-    for (let r = 0; r < results.length; r++) {
-      const klines = results[r];
-      const code = state.codes[state.offset + r];
-      if (Array.isArray(klines) && klines.length > 0) {
-        allKlines.push(...klines);
-      } else if (klines?.error) {
-        errors++;
+    for (let i = 0; i < emResults.length; i++) {
+      if (emResults[i] && emResults[i].length > 0) {
+        allKlines.push(...emResults[i]);
+      } else {
+        // 回退到腾讯
+        const code = batchCodes[i];
+        try {
+          const info = await dbGet('SELECT circ_mv FROM stock_info WHERE code = ?', [code]);
+          const tqKlines = await tq.getDailyKline(code, 
+            dayjs(klineStart).format('YYYY-MM-DD'), 
+            dayjs(klineEnd).format('YYYY-MM-DD')
+          );
+          if (tqKlines && tqKlines.length > 0) {
+            for (const k of tqKlines) {
+              let turnover = null;
+              if (info && info.circ_mv && info.circ_mv > 0 && k.close > 0 && k.volume > 0) {
+                turnover = Math.round((k.volume * 100 * k.close / (info.circ_mv * 1e8) * 100) * 100) / 100;
+              }
+              allKlines.push({ ...k, turnover });
+            }
+          }
+        } catch(e) { errors++; }
       }
       state.offset++;
       processed++;
     }
+    
     if (allKlines.length > 0) {
       for (let j = 0; j < allKlines.length; j += 500) {
         await dbBatch(allKlines.slice(j, j + 500).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
@@ -1224,8 +1315,25 @@ async function runAutoSync(mode = 'incremental') {
     let klineCount = 0;
     for (let i = 0; i < codes.length; i++) {
       try {
-        const klines = await emKline.getDailyKline(codes[i], klineStart, klineEnd);
-        if (klines.length > 0) {
+        let klines = await emKline.getDailyKline(codes[i], klineStart, klineEnd);
+        // 东方财富失败则回退到腾讯+计算换手率
+        if (!klines || klines.length === 0) {
+          const info = await dbGet('SELECT circ_mv FROM stock_info WHERE code = ?', [codes[i]]);
+          const tqKlines = await tq.getDailyKline(codes[i], 
+            dayjs(klineStart).format('YYYY-MM-DD'), 
+            dayjs(klineEnd).format('YYYY-MM-DD')
+          );
+          if (tqKlines && tqKlines.length > 0) {
+            klines = tqKlines.map(k => {
+              let turnover = null;
+              if (info && info.circ_mv && info.circ_mv > 0 && k.close > 0 && k.volume > 0) {
+                turnover = Math.round((k.volume * 100 * k.close / (info.circ_mv * 1e8) * 100) * 100) / 100;
+              }
+              return { ...k, turnover };
+            });
+          }
+        }
+        if (klines && klines.length > 0) {
           for (let j = 0; j < klines.length; j += 200) {
             await dbBatch(klines.slice(j, j+200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
           }
