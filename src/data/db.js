@@ -49,7 +49,18 @@ const ALTER_COLS = [
   ['stock_score','reason','TEXT'],['stock_score','quality_detail','TEXT'],['stock_score','quality_latest','REAL'],
   ['stock_score','valuation_detail','TEXT'],['stock_score','technical_detail','TEXT'],['stock_score','pe','REAL'],
   ['stock_score','crowding_score','REAL'],['stock_score','crowding_level','TEXT'],
-  ['stock_pool','pool_score','REAL']
+  ['stock_pool','pool_score','REAL'],
+  // Universe v2 新增字段（综合评分、行业分组、各维度分）
+  ['stock_universe','universe_score','REAL'],
+  ['stock_universe','industry_group','TEXT'],
+  ['stock_universe','industry_factor','REAL'],
+  ['stock_universe','score_mv','REAL'],
+  ['stock_universe','score_liq','REAL'],
+  ['stock_universe','score_active','REAL'],
+  ['stock_universe','score_risk','REAL'],
+  ['stock_universe','score_val','REAL'],
+  ['stock_universe','score_data','REAL'],
+  ['stock_universe','select_reason','TEXT'],
 ];
 
 if (usePostgres) {

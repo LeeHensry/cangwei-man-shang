@@ -14,8 +14,10 @@
 - **Render环境变量**：SUPABASE_DB_URL（pooler连接字符串），已删除旧的TURSO_AUTH_TOKEN和TURSO_DATABASE_URL
 - **Render时区坑**：服务器时间为UTC，node-cron表达式必须写UTC时间（北京时间-8小时）。Render免费版进程在无外部请求时会被suspend，setInterval/setTimeout在休眠期间不执行，必须靠外部HTTP请求（如GitHub Actions）保活才能让cron按时触发
 - **保活方案**：GitHub Actions每10分钟curl `/api/version`（.github/workflows/keep-alive.yml）
-- **当前版本**：v1.6.1
-- **分步同步架构**：v1.6.1新增`/api/sync/step` API，将全量同步拆分为独立步骤(kline/indicators/score/crowding/pool/full-pipeline/status)，每步50秒内完成一批，支持断点续传。解决Render免费版suspend导致全量同步中断的问题。GitHub Actions收盘后分4次触发full-pipeline
+- **当前版本**：v1.6.3
+- **分步同步架构**：v1.6.1新增`/api/sync/step` API，将全量同步拆分为独立步骤(kline/indicators/score/crowding/pool/finance/full-pipeline/status)，每步50秒内完成一批，支持断点续传。解决Render免费版suspend导致全量同步中断的问题。GitHub Actions收盘后分4次触发full-pipeline
+- **K线数据源**：v1.6.3采用「东方财富优先→腾讯回退」策略。东方财富K线API(push2his)在Render上间歇性失败，回退到腾讯K线(可用但不返回换手率)，用circ_mv和成交量自行计算换手率：turnover(%) = volume(手) * 100 * close / (circ_mv * 1e8) * 100。getDailyKline含2次重试+8秒超时。server.js中`emKline`引用东方财富模块，`tq`引用腾讯datasources
+- **财务数据分步拉取**：v1.6.3新增finance step，分批拉取东方财富datacenter财务数据，避免scoreAllStocks内同步拉取200只财务数据超时。full-pipeline在评分前自动检查finance < pool*0.5时触发
 - **动态Universe**：v1.6.0新增stock_universe表，从全市场按市值降序动态筛选Top 1000只（排除ST/退市/北交所/价格<2元），月初自动更新；股票池(200只)从Universe中按流动性45%+市值30%+动量25%综合打分选出；静态JSON保留作降级兜底
 - **数据库迁移**：v1.6.0从Turso(SQLite)迁移到Supabase(PostgreSQL)，db.js内置SQL方言转换器（?→$N, INSERT OR REPLACE→ON CONFLICT），环境变量SUPABASE_DB_URL；本地开发仍用better-sqlite3
 - **性能优化**：v1.6.1优化指标计算查询——只SELECT必要字段(trade_date,close,high,low,volume)而非SELECT *，只写最近250天指标，减少Supabase远程DB传输量
