@@ -505,7 +505,7 @@ app.post('/api/sync/step', async (req, res) => {
         UPDATE daily_kline SET turnover = sub.turnover
         FROM (
           SELECT k.code, k.trade_date,
-            ROUND(k.volume * 100 * k.close / (i.circ_mv * 100000000) * 100, 2) as turnover
+            ROUND(CAST(k.volume * 100 * k.close / (i.circ_mv * 100000000) * 100 AS numeric), 2) as turnover
           FROM daily_kline k
           JOIN stock_info i ON k.code = i.code
           WHERE (k.turnover IS NULL OR k.turnover = 0)
