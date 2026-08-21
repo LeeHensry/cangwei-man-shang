@@ -403,7 +403,7 @@ app.post('/api/sync/step', async (req, res) => {
 
       // 拉取K线（full模式并发拉取提升效率）
       // 策略：优先用东方财富（含turnover），失败则回退到腾讯+自行计算turnover
-      const klineBatchSize = isFullMode ? 5 : batchSize;
+      const klineBatchSize = isFullMode ? 3 : batchSize;
       while (state.offset < state.total && processed < klineBatchSize && getTimeLeft(startTime) > 8000) {
         // 并发拉取本批K线（最多3只并发）
         const remaining = klineBatchSize - processed;

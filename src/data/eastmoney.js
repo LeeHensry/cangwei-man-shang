@@ -132,7 +132,7 @@ async function getStockList() {
  * @param {string} klt K线类型 101=日 102=周 103=月
  */
 async function getDailyKline(code, startDate, endDate, klt = '101') {
-  const maxRetries = 3;
+  const maxRetries = 2;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const secid = toSecId(code);
@@ -150,13 +150,13 @@ async function getDailyKline(code, startDate, endDate, klt = '101') {
           lmt: 1000000,
           _: Date.now()
         },
-        timeout: 20000,  // 单次请求20秒超时
+        timeout: 8000,  // 单次请求8秒超时（减少等待）
       });
       
       const klines = res.data?.data?.klines;
       if (!klines || klines.length === 0) {
         if (attempt < maxRetries) {
-          await sleep(500 * attempt);  // 递增等待
+          await sleep(300);  // 短暂等待后重试
           continue;
         }
         return [];
@@ -180,9 +180,8 @@ async function getDailyKline(code, startDate, endDate, klt = '101') {
         };
       });
     } catch (e) {
-      console.error(`获取${code}K线失败(尝试${attempt}/${maxRetries}):`, e.message);
       if (attempt < maxRetries) {
-        await sleep(500 * attempt);
+        await sleep(300);
         continue;
       }
       return [];
