@@ -495,6 +495,38 @@ app.post('/api/sync/step', async (req, res) => {
       if (state.done) {
         stepSyncState.kline = { offset: 0, total: 0, codes: [], done: false };
       }
+    } else if (step === 'fix-turnover') {
+      // === 用DB中已有数据批量计算换手率 ===
+      // turnover(%) = volume(手) * 100(股/手) * close / (circ_mv * 1e8) * 100
+      const offset = parseInt(req.body?.offset || '0');
+      const batchLimit = 5000;
+      
+      // 查找turnover为null的K线，关联stock_info获取circ_mv
+      const rows = await dbAll(`
+        SELECT k.code, k.trade_date, k.volume, k.close, i.circ_mv
+        FROM daily_kline k
+        JOIN stock_info i ON k.code = i.code
+        WHERE (k.turnover IS NULL OR k.turnover = 0) AND i.circ_mv > 0 AND k.volume > 0 AND k.close > 0
+        LIMIT ${batchLimit} OFFSET ${offset}
+      `);
+      
+      let updated = 0;
+      if (rows.length > 0) {
+        const updates = rows.map(r => {
+          const turnover = Math.round((r.volume * 100 * r.close / (r.circ_mv * 1e8) * 100) * 100) / 100;
+          return { sql: `UPDATE daily_kline SET turnover = ? WHERE code = ? AND trade_date = ?`, args: [turnover, r.code, r.trade_date] };
+        });
+        await dbBatch(updates);
+        updated = rows.length;
+      }
+      
+      const totalNull = (await dbGet(`SELECT COUNT(*) as c FROM daily_kline k JOIN stock_info i ON k.code = i.code WHERE (k.turnover IS NULL OR k.turnover = 0) AND i.circ_mv > 0`))?.c || 0;
+      
+      result = {
+        step: 'fix-turnover', updated, offset, remaining: totalNull,
+        done: totalNull === 0,
+        timeElapsed: Date.now() - startTime,
+      };
     } else if (step === 'indicators') {
       // === 技术指标分批计算 ===
       if (stepSyncState.indicators.codes.length === 0 || stepSyncState.indicators.done) {
