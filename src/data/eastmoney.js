@@ -57,70 +57,79 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
  */
 async function getStockList() {
   const allStocks = [];
-  const pageSize = 100;
-  
-  // 沪深A股 fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23
-  for (let page = 1; page <= 60; page++) {
-    try {
-      const res = await EastMoneyEmweb.get('', {
-        params: {
-          pn: page,
-          pz: pageSize,
-          po: 1,
-          np: 1,
-          fltt: 2,
-          invt: 2,
-          fid: 'f3',
-          fs: 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048',
-          fields: 'f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23',
-          _: Date.now()
-        }
-      });
-      
-      const data = res.data?.data?.diff;
-      if (!data || data.length === 0) break;
-      
-      for (const item of data) {
-        const code = item.f12;
-        const name = item.f14;
-        if (!code || !name) continue;
-        // 过滤B股、退市等
-        if (name.includes('ST') || name.includes('退') || code.startsWith('9')) {
-          // 标记但保留
-        }
-        
-        const market = code.startsWith('6') ? 'SH' : (code.startsWith('8') || code.startsWith('4') ? 'BJ' : 'SZ');
-        
-        allStocks.push({
-          code,
-          name,
-          market,
-          close: item.f2,
-          pct_chg: item.f3,
-          chg: item.f4,
-          volume: item.f5,         // 手
-          amount: item.f6,         // 元
-          amplitude: item.f7,
-          turnover: item.f8,       // 换手率
-          pe: item.f9,
-          high: item.f15,
-          low: item.f16,
-          open: item.f17,
-          pre_close: item.f18,
-          total_mv: item.f20 ? Math.round(item.f20 / 100000000) : null,  // 转亿
-          circ_mv: item.f21 ? Math.round(item.f21 / 100000000) : null,
-          is_st: name.includes('ST') ? 1 : 0,
-          updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  const pageSize = 5000; // 一次拉5000只，减少请求次数，避免Render上多页超时
+
+  // 沪深A股 fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23（含创业板+科创板）
+  // m:0+t:81+s:2048 = 北交所，排除
+  for (let page = 1; page <= 3; page++) { // 3页×5000=15000只，足够覆盖全部A股
+    let retries = 2;
+    while (retries >= 0) {
+      try {
+        const res = await EastMoneyEmweb.get('', {
+          timeout: 20000, // 单页20秒超时
+          params: {
+            pn: page,
+            pz: pageSize,
+            po: 1,
+            np: 1,
+            fltt: 2,
+            invt: 2,
+            fid: 'f20', // 按总市值降序，大盘股优先
+            fs: 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',
+            fields: 'f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f14,f15,f16,f17,f18,f20,f21,f23',
+            _: Date.now()
+          }
         });
+
+        const data = res.data?.data?.diff;
+        if (!data || data.length === 0) break;
+
+        for (const item of data) {
+          const code = item.f12;
+          const name = item.f14;
+          if (!code || !name) continue;
+
+          const market = code.startsWith('6') ? 'SH' : (code.startsWith('8') || code.startsWith('4') ? 'BJ' : 'SZ');
+
+          allStocks.push({
+            code,
+            name,
+            market,
+            close: item.f2,
+            pct_chg: item.f3,
+            chg: item.f4,
+            volume: item.f5,         // 手
+            amount: item.f6,         // 元
+            amplitude: item.f7,
+            turnover: item.f8,       // 换手率
+            pe: item.f9,
+            high: item.f15,
+            low: item.f16,
+            open: item.f17,
+            pre_close: item.f18,
+            total_mv: item.f20 ? Math.round(item.f20 / 100000000) : null,  // 转亿
+            circ_mv: item.f21 ? Math.round(item.f21 / 100000000) : null,
+            is_st: name.includes('ST') ? 1 : 0,
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+          });
+        }
+
+        console.log(`[东财股票列表] 第${page}页获取 ${data.length} 只，累计 ${allStocks.length} 只`);
+        if (data.length < pageSize) break; // 最后一页
+        break; // 成功，跳出重试
+      } catch (e) {
+        retries--;
+        if (retries < 0) {
+          console.error(`[东财股票列表] 第${page}页最终失败:`, e.message);
+          break; // 失败则停止翻页（前面的页数据已可用）
+        }
+        console.log(`[东财股票列表] 第${page}页重试(${retries})...`);
+        await sleep(500);
       }
-      
-      await sleep(80);
-    } catch (e) {
-      console.error(`获取股票列表第${page}页失败:`, e.message);
-      break;
     }
+    await sleep(200);
   }
-  
+
   return allStocks;
 }
 

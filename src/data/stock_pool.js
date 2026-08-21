@@ -119,19 +119,45 @@ async function updateUniverse() {
     console.log(`[universe] 东方财富拉取到 ${allStocks.length} 只股票`);
   } catch(e) {
     console.error('[universe] 东方财富拉取失败:', e.message);
-    try {
-      allStocks = await tq.getStockList();
-      console.log(`[universe] 腾讯降级拉取到 ${allStocks.length} 只股票`);
-    } catch(e2) {
-      console.error('[universe] 腾讯也失败:', e2.message);
-    }
   }
-  if (!allStocks || allStocks.length === 0) {
-    console.log('[universe] 数据源全部失败，用静态JSON兜底');
-    allStocks = BUILTIN_UNIVERSE.map(c => {
-      const code = String(c).replace(/^(sh|sz|bj)/, '');
-      return { code, name: '', market: code.startsWith('6') ? 'SH' : 'SZ', total_mv: 0, circ_mv: 0, close: 0, pct_chg: 0, amount: 0, turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0 };
-    });
+  // 注意：腾讯数据源没有全市场getStockList接口（getQuickStockList需要传入代码列表），不做降级
+  if (!allStocks || allStocks.length < 100) {
+    console.log(`[universe] 在线数据源不足(${allStocks?.length || 0}只)，使用静态Universe+DB已有数据兜底`);
+    // 从DB中读取已有股票信息补充name和基本数据
+    const dbStocks = [];
+    try {
+      const { dbAll } = require('./db');
+      const rows = await dbAll('SELECT code, name, close FROM stock_info WHERE length(code)=6');
+      const dbMap = new Map(rows.map(r => [r.code, r]));
+      for (const c of BUILTIN_UNIVERSE) {
+        const code = String(c).replace(/^(sh|sz|bj)/, '');
+        const dbRow = dbMap.get(code);
+        dbStocks.push({
+          code,
+          name: dbRow?.name || '',
+          market: code.startsWith('6') ? 'SH' : 'SZ',
+          total_mv: 0, circ_mv: 0, close: dbRow?.close || 10,
+          pct_chg: 0, amount: 0, turnover: 0, amplitude: 0, pe: null,
+          volume: 0, is_st: 0, _fromFallback: true,
+        });
+      }
+    } catch(e2) {
+      console.error('[universe] DB读取也失败:', e2.message);
+      for (const c of BUILTIN_UNIVERSE) {
+        const code = String(c).replace(/^(sh|sz|bj)/, '');
+        dbStocks.push({
+          code, name: '', market: code.startsWith('6') ? 'SH' : 'SZ',
+          total_mv: 0, circ_mv: 0, close: 10, pct_chg: 0, amount: 0,
+          turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0, _fromFallback: true,
+        });
+      }
+    }
+    // 合并在线数据和兜底数据
+    const onlineCodes = new Set(allStocks.map(s => s.code));
+    for (const s of dbStocks) {
+      if (!onlineCodes.has(s.code)) allStocks.push(s);
+    }
+    console.log(`[universe] 兜底合并后共 ${allStocks.length} 只`);
   }
 
   // 2. 基础硬过滤
@@ -142,15 +168,15 @@ async function updateUniverse() {
     if (s.name && s.name.includes('退')) return false;
     // 北交所
     if (s.market === 'BJ') return false;
-    // 名称为空——无效代码/已退市合并
-    if (!s.name || s.name.trim() === '' || s.name === 'None') return false;
+    // 名称为空——非兜底来源视为无效；兜底来源允许（后续从DB或行业编码推断）
+    if (!s._fromFallback && (!s.name || s.name.trim() === '' || s.name === 'None')) return false;
     // 价格过滤
     if (!s.close || s.close <= 0 || s.close < 2) return false;
-    // 成交额过滤：低于3000万元的冷门股剔除（amount单位为元）
+    // 成交额过滤：低于3000万元的冷门股剔除（兜底来源数据可能为0，放宽）
     const amountYi = (s.amount || 0) / 1e8;
-    if (amountYi < 0.3) return false;
-    // 流通市值过滤：低于20亿的极小盘剔除
-    if (s.circ_mv && s.circ_mv < 20) return false;
+    if (!s._fromFallback && amountYi < 0.3) return false;
+    // 流通市值过滤：低于20亿的极小盘剔除（兜底来源无数据时跳过）
+    if (!s._fromFallback && s.circ_mv && s.circ_mv < 20) return false;
     // PE为负且严重亏损（PE < -1000，即EPS极小/巨亏）直接剔除
     // 注意：正常周期股亏损PE在 -5~-200 范围，这里不硬过滤，留给估值分扣分
     // 但PE < -1000 意味着几乎资不抵债/每股亏损极大，直接排除
@@ -171,7 +197,7 @@ async function updateUniverse() {
     const existingCodes = new Set(filtered.map(s => s.code));
     const supplement = builtinCodes
       .filter(c => !existingCodes.has(c))
-      .map(c => ({ code: c, name: '', market: c.startsWith('6') ? 'SH' : 'SZ', total_mv: 0, circ_mv: 0, close: 0, pct_chg: 0, amount: 0, turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0 }));
+      .map(c => ({ code: c, name: '', market: c.startsWith('6') ? 'SH' : 'SZ', total_mv: 0, circ_mv: 0, close: 10, pct_chg: 0, amount: 0, turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0, _fromFallback: true }));
     filtered.push(...supplement);
     console.log(`[universe] 补充后共 ${filtered.length} 只`);
   }
