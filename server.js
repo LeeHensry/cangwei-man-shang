@@ -795,6 +795,27 @@ app.post('/api/sync/step', async (req, res) => {
         result = { step: 'finance-upload', written, timeElapsed: Date.now() - startTime };
       }
 
+    } else if (step === 'valuation-upload') {
+      // === 批量上传估值数据(PE/PB/股息率等) ===
+      const records = req.body?.records || [];
+      if (records.length === 0) {
+        result = { step: 'valuation-upload', error: 'no records', written: 0 };
+      } else {
+        const today = dayjs().format('YYYYMMDD');
+        const valuesStr = records.map(r =>
+          `('${r.code}','${r.trade_date || today}',${r.pe ?? 'NULL'},${r.pe_ttm ?? 'NULL'},${r.pb ?? 'NULL'},${r.ps ?? 'NULL'},${r.dv_ratio ?? 'NULL'},${r.total_mv ?? 'NULL'},${r.circ_mv ?? 'NULL'})`
+        ).join(',');
+        await dbRun(`INSERT INTO valuation (code,trade_date,pe,pe_ttm,pb,ps,dv_ratio,total_mv,circ_mv) VALUES ${valuesStr}
+          ON CONFLICT(code,trade_date) DO UPDATE SET pe=EXCLUDED.pe,pe_ttm=EXCLUDED.pe_ttm,pb=EXCLUDED.pb,ps=EXCLUDED.ps,dv_ratio=EXCLUDED.dv_ratio,total_mv=EXCLUDED.total_mv,circ_mv=EXCLUDED.circ_mv`);
+        // 同时更新stock_score的pe字段（最新的）
+        for (const r of records) {
+          if (r.pe != null) {
+            try { await dbRun(`UPDATE stock_score SET pe = $1 WHERE code = $2 AND strategy = 'value' AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = $2 AND strategy='value')`, [r.pe, r.code]); } catch(e) {}
+          }
+        }
+        result = { step: 'valuation-upload', written: records.length, timeElapsed: Date.now() - startTime };
+      }
+
     } else if (step === 'pool') {
       // === 股票池刷新（分批拉行情）===
       const r = await stockPool.updateStockPoolBatch(200, startTime);

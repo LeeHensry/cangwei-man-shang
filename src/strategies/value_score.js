@@ -243,9 +243,9 @@ async function calcQualityScore(code) {
     SELECT * FROM financial_indicator WHERE code = ? ORDER BY report_date DESC LIMIT 12
   `, [code]);
   
-  // 财务数据不足时返回中性分(避免完全没数据导致页面空白)，继续参与估值/技术评分
+  // 财务数据不足时返回低分(没有财务数据无法判断质量，不能给50分默认值混在好公司里)
   if (finData.length < 2) {
-    return { score: 50, method: 'no_financial_data', signals: ['⚠️ 财务数据不足，质量分为默认值'] };
+    return { score: 30, method: 'no_financial_data', signals: ['⚠️ 无财务数据，质量分低'], breakdown: { profit: 0, growth: 0, health: 10, extra: 20 } };
   }
   
   const stockInfo = await dbGet('SELECT name, total_mv FROM stock_info WHERE code = ?', [code]);
@@ -541,17 +541,19 @@ async function calcValuationScore(code) {
   };
 }
 
-// 备用：纯价格位置
+// 备用：纯价格位置（注意：没有PE数据时不能给高分，价格低不代表价值低估）
 async function estimateValuationFromPrice(code) {
   const klines = await dbAll(`
     SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 500
   `, [code]);
-  if (klines.length < 60) return { score: 50, method: 'insufficient_data' };
+  if (klines.length < 60) return { score: 50, method: 'insufficient_data', warning: '无PE数据，估值分不可靠' };
   const closes = klines.map(k => k.close);
   const current = closes[0];
   const max = Math.max(...closes), min = Math.min(...closes);
   const pct = (current - min) / (max - min) * 100;
-  return { score: Math.round(100 - pct), price_percentile: Math.round(pct), method: 'price_position' };
+  // 没有PE数据时，价格位置最多给55分（不够买入信号阈值），不能因为跌得多就给100分
+  const score = Math.min(55, Math.round((100 - pct) * 0.55));
+  return { score, price_percentile: Math.round(pct), method: 'price_position_only(no_pe_data)', warning: '缺少PE数据，估值分基于价格位置，不可靠' };
 }
 
 // ========== 技术评分（不变）==========

@@ -14,7 +14,11 @@
 - **Render环境变量**：SUPABASE_DB_URL（pooler连接字符串），已删除旧的TURSO_AUTH_TOKEN和TURSO_DATABASE_URL
 - **Render时区坑**：服务器时间为UTC，node-cron表达式必须写UTC时间（北京时间-8小时）。Render免费版进程在无外部请求时会被suspend，setInterval/setTimeout在休眠期间不执行，必须靠外部HTTP请求（如GitHub Actions）保活才能让cron按时触发
 - **保活方案**：GitHub Actions每10分钟curl `/api/version`（.github/workflows/keep-alive.yml）
-- **当前版本**：v1.6.3
+- **当前版本**：v1.6.8
+- **Universe v2（v1.6.4+）**：六维评分选股(市值25%/流动性25%/活跃度15%/风险15%/估值10%/数据质量10%)；行业调节系数+硬上限（银行0.90≤50只/地产0.75≤25只/高成长1.02~1.08/传统周期0.88~0.95）；三层入选(核心大盘+行业代表+成长活跃)；亏损股分层(PE≤-1000硬剔除/轻度中度亏损×0.7惩罚)；跌停硬剔除改为风险扣分
+- **数据源可用性**：东方财富clist/get全市场列表API在Render上完全不可用；腾讯没有全市场列表接口只有批量行情查询(qt.gtimg.cn)；**Universe刷新采用本地脚本方案**(scripts/upload-universe.js本地拉腾讯行情→打分→/api/universe/upload-batch上传)
+- **腾讯行情字段位置**：parts[3]=close, [6]=volume(手), [32]=pct_chg, [37]=amount(万元需×10000转元), [38]=turnover%, [39]=PE, [43]=amplitude, [44]=circ_mv(亿), [45]=total_mv(亿)；tencent.js parseFullQuote已修复amount单位bug
+- **crowding-batch性能问题**：getCrowdingSignal首次计算板块拥挤度很慢(冷启动需查大量K线)，当前初始化时查全量stock_info(841只)而非pool(200只)，在Render上易超时；密集连续调用可避免进程suspend导致state重置
 - **分步同步架构**：v1.6.1新增`/api/sync/step` API，将全量同步拆分为独立步骤(kline/indicators/score/crowding/pool/finance/full-pipeline/status)，每步50秒内完成一批，支持断点续传。解决Render免费版suspend导致全量同步中断的问题。GitHub Actions收盘后分4次触发full-pipeline
 - **K线数据源**：v1.6.3采用「东方财富优先→腾讯回退」策略。东方财富K线API(push2his)在Render上间歇性失败，回退到腾讯K线(可用但不返回换手率)，用circ_mv和成交量自行计算换手率：turnover(%) = volume(手) * 100 * close / (circ_mv * 1e8) * 100。getDailyKline含2次重试+8秒超时。server.js中`emKline`引用东方财富模块，`tq`引用腾讯datasources
 - **财务数据分步拉取**：v1.6.3新增finance step，分批拉取东方财富datacenter财务数据，避免scoreAllStocks内同步拉取200只财务数据超时。full-pipeline在评分前自动检查finance < pool*0.5时触发
