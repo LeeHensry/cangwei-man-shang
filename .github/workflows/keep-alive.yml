@@ -25,6 +25,10 @@ on:
           - full-pipeline
           - kline
           - indicators
+          - finance
+          - score
+          - crowding
+          - pool
           - score
           - crowding
           - pool

@@ -29,7 +29,7 @@ const tq = ds;
 // 东方财富K线数据源（含换手率字段，腾讯K线不返回换手率）
 const emKline = require('./src/data/eastmoney');
 const { calcAllIndicators } = require('./src/factors/indicators');
-const { scoreAllStocks, classifyIndustry } = require('./src/strategies/value_score');
+const { scoreAllStocks, classifyIndustry, syncFinancialData } = require('./src/strategies/value_score');
 const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
 const { calcAllCrowding, getCrowdingSignal } = require('./src/factors/crowding');
 const dayjs = require('dayjs');
@@ -323,6 +323,7 @@ const SYNC_BATCH_SIZE = 20;      // 每批处理20只股票的K线
 let stepSyncState = {
   kline: { offset: 0, total: 0, codes: [], done: false },
   indicators: { offset: 0, total: 0, codes: [], done: false },
+  finance: { offset: 0, total: 0, codes: [], done: false },
 };
 
 function getTimeLeft(startTime) {
@@ -468,6 +469,39 @@ app.post('/api/sync/step', async (req, res) => {
       await calcAllCrowding();
       result = { step: 'crowding', done: true, timeElapsed: Date.now() - startTime };
 
+    } else if (step === 'finance') {
+      // === 财务数据分批拉取 ===
+      if (stepSyncState.finance.codes.length === 0 || stepSyncState.finance.done) {
+        const allCodeRows = await dbAll('SELECT code FROM stock_pool WHERE in_pool=1');
+        stepSyncState.finance = { offset: 0, total: allCodeRows.length, codes: allCodeRows.map(r => r.code), done: false };
+      }
+      const state = stepSyncState.finance;
+      let processed = 0, finCount = 0, errors = 0;
+      while (state.offset < state.total && processed < batchSize * 2 && getTimeLeft(startTime) > 5000) {
+        const code = state.codes[state.offset];
+        try {
+          const hasFin = (await dbGet('SELECT COUNT(*) as c FROM financial_indicator WHERE code = ?', [code]))?.c || 0;
+          if (hasFin === 0) {
+            const ok = await syncFinancialData(code);
+            if (ok) finCount++;
+          }
+        } catch(e) { errors++; }
+        state.offset++;
+        processed++;
+        await new Promise(r => setTimeout(r, 150));
+      }
+      state.done = state.offset >= state.total;
+      result = {
+        step: 'finance', processed, finCount, errors,
+        progress: `${state.offset}/${state.total}`,
+        progressPct: Math.round(state.offset / state.total * 100),
+        done: state.done,
+        timeElapsed: Date.now() - startTime,
+      };
+      if (state.done) {
+        stepSyncState.finance = { offset: 0, total: 0, codes: [], done: false };
+      }
+
     } else if (step === 'pool') {
       // === 股票池刷新（分批拉行情）===
       const r = await stockPool.updateStockPoolBatch(200, startTime);
@@ -489,6 +523,7 @@ app.post('/api/sync/step', async (req, res) => {
         finance: financeCount,
         klineSync: stepSyncState.kline.done ? 'idle' : `${stepSyncState.kline.offset}/${stepSyncState.kline.total}`,
         indicatorSync: stepSyncState.indicators.done ? 'idle' : `${stepSyncState.indicators.offset}/${stepSyncState.indicators.total}`,
+        financeSync: stepSyncState.finance.done ? 'idle' : `${stepSyncState.finance.offset}/${stepSyncState.finance.total}`,
       };
 
     } else if (step === 'full-pipeline') {
@@ -518,6 +553,11 @@ app.post('/api/sync/step', async (req, res) => {
         // 指标不够→算指标
         nextStep = 'indicators';
         const r = await runStepIndicators(startTime, batchSize * 3);
+        stepResult = r;
+      } else if (status.finance < status.pool * 0.5) {
+        // 财务数据不够→拉财务
+        nextStep = 'finance';
+        const r = await runStepFinance(startTime, batchSize * 2);
         stepResult = r;
       } else if (status.scores < status.pool) {
         // 评分不够→评分
@@ -557,7 +597,8 @@ async function getSyncStatus() {
   const indCount = (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0;
   const scoreCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0;
   const crowdCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0;
-  return { pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount, scores: scoreCount, crowding: crowdCount };
+  const financeCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0;
+  return { pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount, scores: scoreCount, crowding: crowdCount, finance: financeCount };
 }
 
 // 辅助函数：执行一批K线同步
@@ -663,6 +704,34 @@ async function runStepIndicators(startTime, batchSize) {
   state.done = state.offset >= state.total;
   const r = { subStep: 'indicators', processed, indCount, progress: `${state.offset}/${state.total}`, progressPct: Math.round(state.offset / state.total * 100), done: state.done };
   if (state.done) stepSyncState.indicators = { offset: 0, total: 0, codes: [], done: false };
+  return r;
+}
+
+// 辅助函数：执行一批财务数据拉取
+async function runStepFinance(startTime, batchSize) {
+  if (stepSyncState.finance.codes.length === 0 || stepSyncState.finance.done) {
+    const allCodeRows = await dbAll('SELECT code FROM stock_pool WHERE in_pool=1');
+    if (allCodeRows.length === 0) return { done: true, processed: 0, finCount: 0 };
+    stepSyncState.finance = { offset: 0, total: allCodeRows.length, codes: allCodeRows.map(r => r.code), done: false };
+  }
+  const state = stepSyncState.finance;
+  let processed = 0, finCount = 0, errors = 0;
+  while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+    const code = state.codes[state.offset];
+    try {
+      const hasFin = (await dbGet('SELECT COUNT(*) as c FROM financial_indicator WHERE code = ?', [code]))?.c || 0;
+      if (hasFin === 0) {
+        const ok = await syncFinancialData(code);
+        if (ok) finCount++;
+      }
+    } catch(e) { errors++; }
+    state.offset++;
+    processed++;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  state.done = state.offset >= state.total;
+  const r = { subStep: 'finance', processed, finCount, errors, progress: `${state.offset}/${state.total}`, progressPct: Math.round(state.offset / state.total * 100), done: state.done };
+  if (state.done) stepSyncState.finance = { offset: 0, total: 0, codes: [], done: false };
   return r;
 }
 
