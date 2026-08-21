@@ -497,33 +497,28 @@ app.post('/api/sync/step', async (req, res) => {
       }
     } else if (step === 'fix-turnover') {
       // === 用DB中已有数据批量计算换手率 ===
-      // turnover(%) = volume(手) * 100(股/手) * close / (circ_mv * 1e8) * 100
-      const offset = parseInt(req.body?.offset || '0');
-      const batchLimit = 1000;
+      // 单条SQL批量更新，避免逐条UPDATE太慢
+      const startTimeFT = Date.now();
       
-      // 查找turnover为null的K线，关联stock_info获取circ_mv
-      const rows = await dbAll(`
-        SELECT k.code, k.trade_date, k.volume, k.close, i.circ_mv
-        FROM daily_kline k
-        JOIN stock_info i ON k.code = i.code
-        WHERE (k.turnover IS NULL OR k.turnover = 0) AND i.circ_mv > 0 AND k.volume > 0 AND k.close > 0
-        LIMIT ${batchLimit} OFFSET ${offset}
+      // 使用子查询批量更新（PostgreSQL语法）
+      await dbRun(`
+        UPDATE daily_kline SET turnover = sub.turnover
+        FROM (
+          SELECT k.code, k.trade_date,
+            ROUND(k.volume * 100 * k.close / (i.circ_mv * 100000000) * 100, 2) as turnover
+          FROM daily_kline k
+          JOIN stock_info i ON k.code = i.code
+          WHERE (k.turnover IS NULL OR k.turnover = 0)
+            AND i.circ_mv > 0 AND k.volume > 0 AND k.close > 0
+          LIMIT 5000
+        ) sub
+        WHERE daily_kline.code = sub.code AND daily_kline.trade_date = sub.trade_date
       `);
-      
-      let updated = 0;
-      if (rows.length > 0) {
-        const updates = rows.map(r => {
-          const turnover = Math.round((r.volume * 100 * r.close / (r.circ_mv * 1e8) * 100) * 100) / 100;
-          return { sql: `UPDATE daily_kline SET turnover = ? WHERE code = ? AND trade_date = ?`, args: [turnover, r.code, r.trade_date] };
-        });
-        await dbBatch(updates);
-        updated = rows.length;
-      }
       
       const totalNull = (await dbGet(`SELECT COUNT(*) as c FROM daily_kline k JOIN stock_info i ON k.code = i.code WHERE (k.turnover IS NULL OR k.turnover = 0) AND i.circ_mv > 0`))?.c || 0;
       
       result = {
-        step: 'fix-turnover', updated, offset, remaining: totalNull,
+        step: 'fix-turnover', remaining: totalNull,
         done: totalNull === 0,
         timeElapsed: Date.now() - startTime,
       };
