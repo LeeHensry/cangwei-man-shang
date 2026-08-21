@@ -384,22 +384,33 @@ app.post('/api/sync/step', async (req, res) => {
         } catch(e) { console.log('[step:kline] 行情拉取失败:', e.message); }
       }
 
-      // 拉取K线（full模式下增大批量，因为没有行情拉取占时间）
-      const klineBatchSize = isFullMode ? Math.max(batchSize, 8) : batchSize;
-      while (state.offset < state.total && processed < klineBatchSize && getTimeLeft(startTime) > 5000) {
-        const code = state.codes[state.offset];
-        try {
-          const klines = await emKline.getDailyKline(code, klineStart, klineEnd);
-          if (klines.length > 0) {
+      // 拉取K线（full模式并发拉取提升效率）
+      const klineBatchSize = isFullMode ? 5 : batchSize;
+      while (state.offset < state.total && processed < klineBatchSize && getTimeLeft(startTime) > 8000) {
+        // 并发拉取本批K线（最多3只并发）
+        const remaining = klineBatchSize - processed;
+        const concurrentBatch = Math.min(3, remaining, state.total - state.offset);
+        const batchCodes = [];
+        for (let b = 0; b < concurrentBatch; b++) {
+          batchCodes.push({ code: state.codes[state.offset + b], idx: state.offset + b });
+        }
+        
+        const klinePromises = batchCodes.map(bc => 
+          emKline.getDailyKline(bc.code, klineStart, klineEnd).catch(e => ({ code: bc.code, klines: [] }))
+        );
+        const klineResults = await Promise.all(klinePromises);
+        
+        for (const klines of klineResults) {
+          if (klines && klines.length > 0) {
             for (let j = 0; j < klines.length; j += 200) {
               await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
             }
             klineCount += klines.length;
           }
-        } catch(e) { errors++; }
-        state.offset++;
-        processed++;
-        await tq.sleep(100);
+        }
+        
+        state.offset += concurrentBatch;
+        processed += concurrentBatch;
       }
 
       state.done = state.offset >= state.total;

@@ -132,48 +132,63 @@ async function getStockList() {
  * @param {string} klt K线类型 101=日 102=周 103=月
  */
 async function getDailyKline(code, startDate, endDate, klt = '101') {
-  try {
-    const secid = toSecId(code);
-    const res = await EastMoneyFinance.get('/kline/get', {
-      params: {
-        secid,
-        ut: 'fa5fd1943c7b386f172d6893dbfba10b',
-        fields1: 'f1,f2,f3,f4,f5,f6',
-        fields2: 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
-        klt,
-        fqt: 1,           // 前复权
-        beg: startDate,
-        end: endDate,
-        smplmt: 550,     // 最多条数(2年约500交易日)
-        lmt: 1000000,
-        _: Date.now()
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const secid = toSecId(code);
+      const res = await EastMoneyFinance.get('/kline/get', {
+        params: {
+          secid,
+          ut: 'fa5fd1943c7b386f172d6893dbfba10b',
+          fields1: 'f1,f2,f3,f4,f5,f6',
+          fields2: 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
+          klt,
+          fqt: 1,           // 前复权
+          beg: startDate,
+          end: endDate,
+          smplmt: 550,     // 最多条数(2年约500交易日)
+          lmt: 1000000,
+          _: Date.now()
+        },
+        timeout: 20000,  // 单次请求20秒超时
+      });
+      
+      const klines = res.data?.data?.klines;
+      if (!klines || klines.length === 0) {
+        if (attempt < maxRetries) {
+          await sleep(500 * attempt);  // 递增等待
+          continue;
+        }
+        return [];
       }
-    });
-    
-    const klines = res.data?.data?.klines;
-    if (!klines) return [];
-    
-    return klines.map(line => {
-      const parts = line.split(',');
-      return {
-        code,
-        trade_date: parts[0].replace(/-/g, ''),
-        open: parseFloat(parts[1]),
-        close: parseFloat(parts[2]),
-        high: parseFloat(parts[3]),
-        low: parseFloat(parts[4]),
-        volume: parseFloat(parts[5]),     // 手
-        amount: parseFloat(parts[6]),     // 元
-        amplitude: parseFloat(parts[7]),
-        pct_chg: parseFloat(parts[8]),
-        chg: parseFloat(parts[9]),
-        turnover: parseFloat(parts[10]) || null,  // f61换手率(%)
-      };
-    });
-  } catch (e) {
-    console.error(`获取${code}K线失败:`, e.message);
-    return [];
+      
+      return klines.map(line => {
+        const parts = line.split(',');
+        return {
+          code,
+          trade_date: parts[0].replace(/-/g, ''),
+          open: parseFloat(parts[1]),
+          close: parseFloat(parts[2]),
+          high: parseFloat(parts[3]),
+          low: parseFloat(parts[4]),
+          volume: parseFloat(parts[5]),     // 手
+          amount: parseFloat(parts[6]),     // 元
+          amplitude: parseFloat(parts[7]),
+          pct_chg: parseFloat(parts[8]),
+          chg: parseFloat(parts[9]),
+          turnover: parseFloat(parts[10]) || null,  // f61换手率(%)
+        };
+      });
+    } catch (e) {
+      console.error(`获取${code}K线失败(尝试${attempt}/${maxRetries}):`, e.message);
+      if (attempt < maxRetries) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      return [];
+    }
   }
+  return [];
 }
 
 /**
