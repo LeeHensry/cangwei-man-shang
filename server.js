@@ -627,7 +627,7 @@ app.post('/api/sync/step', async (req, res) => {
               signal: total.signal, current_price: currentPrice,
               target_price: targetPrice, stop_loss: stopLoss, position_pct: positionPct,
               quality_detail: JSON.stringify({ ...quality.breakdown, industry: quality.industry, isNewEconomy: quality.isNewEconomy, isOldman: quality.isOldman, isDistressed: quality.isDistressed }),
-              quality_latest: JSON.stringify(quality.latest),
+              quality_latest: null,
               valuation_detail: JSON.stringify(valuation),
               technical_detail: JSON.stringify({ signals: technical.signals, rsi14: technical.rsi14 }),
               reason: JSON.stringify(total.reason),
@@ -644,7 +644,7 @@ app.post('/api/sync/step', async (req, res) => {
       if (results.length > 0) {
         const cols = ['code','name','trade_date','strategy','quality_score','valuation_score','technical_score','total_score','signal','current_price','target_price','stop_loss','position_pct','quality_detail','quality_latest','valuation_detail','technical_detail','reason','fund_score','sentiment_score','crowding_score','crowding_level'];
         const valuesStr = results.map(r =>
-          `('${(r.code||'').replace(/'/g,"''")}','${(r.name||'').replace(/'/g,"''")}','${r.trade_date}','${r.strategy}',${r.quality_score ?? 'NULL'},${r.valuation_score ?? 'NULL'},${r.technical_score ?? 'NULL'},${r.total_score ?? 'NULL'},'${r.signal || ''}',${r.current_price ?? 'NULL'},${r.target_price ?? 'NULL'},${r.stop_loss ?? 'NULL'},${r.position_pct ?? 'NULL'},'${(r.quality_detail||'').replace(/'/g,"''")}','${(r.quality_latest||'').replace(/'/g,"''")}','${(r.valuation_detail||'').replace(/'/g,"''")}','${(r.technical_detail||'').replace(/'/g,"''")}','${(r.reason||'').replace(/'/g,"''")}',0,0,${r.crowding_score ?? 'NULL'},${r.crowding_level ? `'${r.crowding_level}'` : 'NULL'})`
+          `('${(r.code||'').replace(/'/g,"''")}','${(r.name||'').replace(/'/g,"''")}','${r.trade_date}','${r.strategy}',${r.quality_score ?? 'NULL'},${r.valuation_score ?? 'NULL'},${r.technical_score ?? 'NULL'},${r.total_score ?? 'NULL'},'${r.signal || ''}',${r.current_price ?? 'NULL'},${r.target_price ?? 'NULL'},${r.stop_loss ?? 'NULL'},${r.position_pct ?? 'NULL'},'${(r.quality_detail||'').replace(/'/g,"''")}',NULL,'${(r.valuation_detail||'').replace(/'/g,"''")}','${(r.technical_detail||'').replace(/'/g,"''")}','${(r.reason||'').replace(/'/g,"''")}',0,0,${r.crowding_score ?? 'NULL'},${r.crowding_level ? `'${r.crowding_level}'` : 'NULL'})`
         ).join(',');
         await dbRun(`INSERT INTO stock_score (${cols.join(',')}) VALUES ${valuesStr} ON CONFLICT (code,trade_date,strategy) DO UPDATE SET quality_score=EXCLUDED.quality_score,valuation_score=EXCLUDED.valuation_score,technical_score=EXCLUDED.technical_score,total_score=EXCLUDED.total_score,signal=EXCLUDED.signal,current_price=EXCLUDED.current_price,target_price=EXCLUDED.target_price,stop_loss=EXCLUDED.stop_loss,position_pct=EXCLUDED.position_pct,quality_detail=EXCLUDED.quality_detail,quality_latest=EXCLUDED.quality_latest,valuation_detail=EXCLUDED.valuation_detail,technical_detail=EXCLUDED.technical_detail,reason=EXCLUDED.reason`);
       }
