@@ -66,7 +66,7 @@ async function getFinancialData(code, count = 20) {
       };
     });
   } catch (e) {
-    console.error(`获取${code}财务数据失败:`, e.message);
+    console.error(`获取${code}财务数据失败:`, e.response?.status, e.message);
     return [];
   }
 }

@@ -598,6 +598,8 @@ app.post('/api/sync/step', async (req, res) => {
           if (hasFin === 0) {
             const ok = await syncFinancialData(code);
             if (ok) finCount++;
+            else { errors++; console.log(`[finance] ${code} returned false`); }
+          }
           }
         } catch(e) { errors++; }
         state.offset++;
