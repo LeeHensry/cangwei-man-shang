@@ -600,7 +600,6 @@ app.post('/api/sync/step', async (req, res) => {
             if (ok) finCount++;
             else { errors++; console.log(`[finance] ${code} returned false`); }
           }
-          }
         } catch(e) { errors++; }
         state.offset++;
         processed++;
