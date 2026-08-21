@@ -108,7 +108,7 @@ function parseFullQuote(text) {
       pre_close: parseFloat(parts[4]),
       open: parseFloat(parts[5]),
       volume: parseFloat(parts[6]),  // 手
-      amount: parseFloat(parts[37] || parts[36]) / 10000, // 成交额(万)
+      amount: parseFloat(parts[37] || parts[36]) * 10000, // 成交额(万元→元), parts[37]单位为万元
       high: parseFloat(parts[33]),
       low: parseFloat(parts[34]),
       pct_chg: parseFloat(parts[32]),

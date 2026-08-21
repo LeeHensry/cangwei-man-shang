@@ -55,13 +55,13 @@ const INDUSTRY_RULES = [
 ];
 
 function classifyIndustry(name) {
-  if (!name) return { group: 'other', factor: 1.00, cap: 80 };
+  if (!name) return { group: 'other', factor: 1.00, cap: 400 };
   for (const rule of INDUSTRY_RULES) {
     for (const kw of rule.keywords) {
       if (name.includes(kw)) return { group: rule.group, factor: rule.factor, cap: rule.cap };
     }
   }
-  return { group: 'other', factor: 1.00, cap: 80 };
+  return { group: 'other', factor: 1.00, cap: 400 }; // other组容量足够大
 }
 
 function parseFullQuote(text) {

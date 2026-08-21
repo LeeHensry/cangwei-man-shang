@@ -77,7 +77,7 @@ const INDUSTRY_RULES = [
  * @returns {{group: string, factor: number, cap: number}}
  */
 function classifyIndustryForUniverse(name) {
-  if (!name) return { group: 'other', factor: 1.00, cap: 80 };
+  if (!name) return { group: 'other', factor: 1.00, cap: 400 };
   for (const rule of INDUSTRY_RULES) {
     for (const kw of rule.keywords) {
       if (name.includes(kw)) {
@@ -85,7 +85,7 @@ function classifyIndustryForUniverse(name) {
       }
     }
   }
-  return { group: 'other', factor: 1.00, cap: 80 };
+  return { group: 'other', factor: 1.00, cap: 400 };
 }
 
 /**
@@ -352,7 +352,7 @@ async function updateUniverse() {
   function canAdd(s) {
     const g = s._industryGroup;
     if (!industryCount[g]) industryCount[g] = 0;
-    const cap = s._industryCap || 80;
+    const cap = s._industryCap || 400;
     // 银行、地产有独立硬上限
     if (g === 'bank' && industryCount[g] >= 50) return false;
     if (g === 'realestate' && industryCount[g] >= 25) return false;

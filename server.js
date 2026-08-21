@@ -1351,11 +1351,11 @@ app.post('/api/universe/upload-batch', async (req, res) => {
              s.score_risk||50,s.score_val||50,s.score_data||50,s.select_reason||'data']
     }));
     await dbBatch(stmts);
-    // 同时更新stock_info表
+    // 同时更新stock_info表（只更新该表存在的字段）
     const infoStmts = stocks.map(s => ({
-      sql: `INSERT INTO stock_info (code,name,close,pct_chg,updated_at) VALUES ($1,$2,$3,$4,$5)
-            ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,close=EXCLUDED.close,pct_chg=EXCLUDED.pct_chg,updated_at=EXCLUDED.updated_at`,
-      args: [s.code,s.name,s.close||null,s.pct_chg||null,now]
+      sql: `INSERT INTO stock_info (code,name,market,is_st,total_mv,circ_mv,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
+            ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,market=EXCLUDED.market,is_st=EXCLUDED.is_st,total_mv=EXCLUDED.total_mv,circ_mv=EXCLUDED.circ_mv,updated_at=EXCLUDED.updated_at`,
+      args: [s.code,s.name,s.market,s.is_st||0,s.total_mv||null,s.circ_mv||null,now]
     }));
     await dbBatch(infoStmts);
     res.json({ ok: true, written: stocks.length });
