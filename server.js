@@ -618,6 +618,25 @@ app.post('/api/sync/step', async (req, res) => {
         stepSyncState.finance = { offset: 0, total: 0, codes: [], done: false };
       }
 
+    } else if (step === 'finance-upload') {
+      // === 从POST body直接写入财务数据（绕过Render无法访问东方财富API的问题）===
+      const records = req.body?.records || [];
+      if (records.length === 0) {
+        result = { step: 'finance-upload', error: 'no records', written: 0 };
+      } else {
+        let written = 0;
+        const columns = ['code', 'report_date', 'roe', 'roa', 'gross_margin', 'net_margin',
+          'revenue', 'revenue_yoy', 'net_profit', 'net_profit_yoy', 'debt_ratio',
+          'current_ratio', 'ocf', 'eps', 'bps', 'ocf_per_share', 'roic', 'report_type'];
+        // 使用多行VALUES INSERT + ON CONFLICT
+        const valuesStr = records.map(r =>
+          `('${r.code}','${r.report_date}',${r.roe ?? 'NULL'},${r.roa ?? 'NULL'},${r.gross_margin ?? 'NULL'},${r.net_margin ?? 'NULL'},${r.revenue ?? 'NULL'},${r.revenue_yoy ?? 'NULL'},${r.net_profit ?? 'NULL'},${r.net_profit_yoy ?? 'NULL'},${r.debt_ratio ?? 'NULL'},${r.current_ratio ?? 'NULL'},${r.ocf ?? 'NULL'},${r.eps ?? 'NULL'},${r.bps ?? 'NULL'},${r.ocf_per_share ?? 'NULL'},${r.roic ?? 'NULL'},'${r.report_type || ''}')`
+        ).join(',');
+        await dbRun(`INSERT INTO financial_indicator (${columns.join(',')}) VALUES ${valuesStr} ON CONFLICT (code,report_date) DO UPDATE SET roe=EXCLUDED.roe,roa=EXCLUDED.roa,gross_margin=EXCLUDED.gross_margin,net_margin=EXCLUDED.net_margin,revenue=EXCLUDED.revenue,revenue_yoy=EXCLUDED.revenue_yoy,net_profit=EXCLUDED.net_profit,net_profit_yoy=EXCLUDED.net_profit_yoy,debt_ratio=EXCLUDED.debt_ratio,current_ratio=EXCLUDED.current_ratio,ocf=EXCLUDED.ocf,eps=EXCLUDED.eps,bps=EXCLUDED.bps,ocf_per_share=EXCLUDED.ocf_per_share,roic=EXCLUDED.roic,report_type=EXCLUDED.report_type`);
+        written = records.length;
+        result = { step: 'finance-upload', written, timeElapsed: Date.now() - startTime };
+      }
+
     } else if (step === 'pool') {
       // === 股票池刷新（分批拉行情）===
       const r = await stockPool.updateStockPoolBatch(200, startTime);
