@@ -88,6 +88,22 @@ async function getStockList() {
           const code = item.f12;
           const name = item.f14;
           if (!code || !name) continue;
+          // 安全转换数值字段：东财对停牌/无效数据返回'-'，需转为null
+          const toNum = (v) => {
+            if (v == null || v === '-' || v === '' || Number.isNaN(Number(v))) return null;
+            return Number(v);
+          };
+          const close = toNum(item.f2);
+          const pct_chg = toNum(item.f3);
+          const high = toNum(item.f15);
+          const low = toNum(item.f16);
+          const amount = toNum(item.f6);
+          const amplitude = toNum(item.f7);
+          const turnover = toNum(item.f8);
+          const peRaw = toNum(item.f9);
+          const pe = (peRaw != null && peRaw > 0 && peRaw < 10000) ? peRaw : null;
+          const total_mv_raw = toNum(item.f20);
+          const circ_mv_raw = toNum(item.f21);
 
           const market = code.startsWith('6') ? 'SH' : (code.startsWith('8') || code.startsWith('4') ? 'BJ' : 'SZ');
 
@@ -95,20 +111,20 @@ async function getStockList() {
             code,
             name,
             market,
-            close: item.f2,
-            pct_chg: item.f3,
-            chg: item.f4,
-            volume: item.f5,         // 手
-            amount: item.f6,         // 元
-            amplitude: item.f7,
-            turnover: item.f8,       // 换手率
-            pe: item.f9,
-            high: item.f15,
-            low: item.f16,
-            open: item.f17,
-            pre_close: item.f18,
-            total_mv: item.f20 ? Math.round(item.f20 / 100000000) : null,  // 转亿
-            circ_mv: item.f21 ? Math.round(item.f21 / 100000000) : null,
+            close,
+            pct_chg,
+            chg: toNum(item.f4),
+            volume: toNum(item.f5),
+            amount, // 元
+            amplitude,
+            turnover, // 换手率%
+            pe,
+            high,
+            low,
+            open: toNum(item.f17),
+            pre_close: toNum(item.f18),
+            total_mv: total_mv_raw ? Math.round(total_mv_raw / 100000000) : null,  // 转亿
+            circ_mv: circ_mv_raw ? Math.round(circ_mv_raw / 100000000) : null,
             is_st: name.includes('ST') ? 1 : 0,
             updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
           });

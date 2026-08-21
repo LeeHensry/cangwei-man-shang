@@ -120,44 +120,53 @@ async function updateUniverse() {
   } catch(e) {
     console.error('[universe] 东方财富拉取失败:', e.message);
   }
-  // 注意：腾讯数据源没有全市场getStockList接口（getQuickStockList需要传入代码列表），不做降级
-  if (!allStocks || allStocks.length < 100) {
-    console.log(`[universe] 在线数据源不足(${allStocks?.length || 0}只)，使用静态Universe+DB已有数据兜底`);
-    // 从DB中读取已有股票信息补充name和基本数据
-    const dbStocks = [];
+
+  // 如果东财数据不足（<500只），用腾讯批量行情为静态972只Universe获取实时数据作为兜底
+  if (!allStocks || allStocks.length < 500) {
+    console.log(`[universe] 东财数据不足(${allStocks?.length || 0}只)，切换到腾讯批量行情拉取静态Universe(${BUILTIN_UNIVERSE.length}只)...`);
     try {
-      const { dbAll } = require('./db');
-      const rows = await dbAll('SELECT code, name, close FROM stock_info WHERE length(code)=6');
-      const dbMap = new Map(rows.map(r => [r.code, r]));
-      for (const c of BUILTIN_UNIVERSE) {
-        const code = String(c).replace(/^(sh|sz|bj)/, '');
-        const dbRow = dbMap.get(code);
-        dbStocks.push({
-          code,
-          name: dbRow?.name || '',
-          market: code.startsWith('6') ? 'SH' : 'SZ',
-          total_mv: 0, circ_mv: 0, close: dbRow?.close || 10,
-          pct_chg: 0, amount: 0, turnover: 0, amplitude: 0, pe: null,
-          volume: 0, is_st: 0, _fromFallback: true,
-        });
+      const tencentCodes = BUILTIN_UNIVERSE.map(c => String(c));
+      const tencentStocks = await tq.getQuickStockList(tencentCodes);
+      console.log(`[universe] 腾讯批量行情返回 ${tencentStocks.length} 只`);
+      if (tencentStocks.length > 0) {
+        // 用腾讯数据覆盖/补充，注意统一单位：腾讯amount是"万元"，东财是"元"，需×10000
+        const merged = [...(allStocks || [])];
+        const existingCodes = new Set(merged.map(s => s.code));
+        for (const s of tencentStocks) {
+          // 转换amount单位：万→元
+          if (s.amount != null) s.amount = s.amount * 10000;
+          if (!existingCodes.has(s.code)) merged.push(s);
+        }
+        allStocks = merged;
+        console.log(`[universe] 合并后共 ${allStocks.length} 只`);
       }
     } catch(e2) {
-      console.error('[universe] DB读取也失败:', e2.message);
-      for (const c of BUILTIN_UNIVERSE) {
-        const code = String(c).replace(/^(sh|sz|bj)/, '');
-        dbStocks.push({
-          code, name: '', market: code.startsWith('6') ? 'SH' : 'SZ',
-          total_mv: 0, circ_mv: 0, close: 10, pct_chg: 0, amount: 0,
-          turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0, _fromFallback: true,
-        });
-      }
+      console.error('[universe] 腾讯批量行情也失败:', e2.message);
     }
-    // 合并在线数据和兜底数据
-    const onlineCodes = new Set(allStocks.map(s => s.code));
-    for (const s of dbStocks) {
-      if (!onlineCodes.has(s.code)) allStocks.push(s);
-    }
-    console.log(`[universe] 兜底合并后共 ${allStocks.length} 只`);
+  }
+
+  // 最终兜底：静态JSON（没有实时数据，只能用基础信息）
+  if (!allStocks || allStocks.length < 100) {
+    console.log(`[universe] 在线数据源全部不足(${allStocks?.length || 0}只)，使用静态兜底`);
+    const dbNameMap = new Map();
+    try {
+      const rows = await dbAll('SELECT code, name FROM stock_info WHERE length(code)=6');
+      for (const r of rows) dbNameMap.set(r.code, r.name);
+    } catch(e) {}
+    const fallbackStocks = BUILTIN_UNIVERSE.map(c => {
+      const code = String(c).replace(/^(sh|sz|bj)/, '');
+      return {
+        code,
+        name: dbNameMap.get(code) || '',
+        market: code.startsWith('6') ? 'SH' : 'SZ',
+        total_mv: 0, circ_mv: 0, close: 10, pct_chg: 0, amount: 0,
+        turnover: 0, amplitude: 0, pe: null, volume: 0, is_st: 0,
+        _fromFallback: true,
+      };
+    });
+    const existingCodes = new Set((allStocks || []).map(s => s.code));
+    allStocks = [...(allStocks || []), ...fallbackStocks.filter(s => !existingCodes.has(s.code))];
+    console.log(`[universe] 静态兜底后共 ${allStocks.length} 只`);
   }
 
   // 2. 基础硬过滤
@@ -168,15 +177,15 @@ async function updateUniverse() {
     if (s.name && s.name.includes('退')) return false;
     // 北交所
     if (s.market === 'BJ') return false;
-    // 名称为空——非兜底来源视为无效；兜底来源允许（后续从DB或行业编码推断）
+    // 名称为空——非兜底来源视为无效；兜底来源允许
     if (!s._fromFallback && (!s.name || s.name.trim() === '' || s.name === 'None')) return false;
     // 价格过滤
-    if (!s.close || s.close <= 0 || s.close < 2) return false;
+    if (s.close == null || isNaN(s.close) || s.close <= 0 || s.close < 2) return false;
     // 成交额过滤：低于3000万元的冷门股剔除（兜底来源数据可能为0，放宽）
-    const amountYi = (s.amount || 0) / 1e8;
-    if (!s._fromFallback && amountYi < 0.3) return false;
+    const amountYi = ((s.amount || 0) / 1e8);
+    if (!s._fromFallback && s.amount != null && s.amount > 0 && amountYi < 0.3) return false;
     // 流通市值过滤：低于20亿的极小盘剔除（兜底来源无数据时跳过）
-    if (!s._fromFallback && s.circ_mv && s.circ_mv < 20) return false;
+    if (!s._fromFallback && s.circ_mv != null && s.circ_mv > 0 && s.circ_mv < 20) return false;
     // PE为负且严重亏损（PE < -1000，即EPS极小/巨亏）直接剔除
     // 注意：正常周期股亏损PE在 -5~-200 范围，这里不硬过滤，留给估值分扣分
     // 但PE < -1000 意味着几乎资不抵债/每股亏损极大，直接排除
