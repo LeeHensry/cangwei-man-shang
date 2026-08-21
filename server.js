@@ -362,8 +362,9 @@ app.post('/api/sync/step', async (req, res) => {
       const klineEnd = dayjs().format('YYYYMMDD');
       let processed = 0, klineCount = 0, errors = 0;
 
-      // 先拉取本批的实时行情
-      const batchCodes = state.codes.slice(state.offset, state.offset + batchSize * 5);
+      // 先拉取本批的实时行情（full模式下跳过以节省时间给K线拉取）
+      const isFullMode = req.body?.full === true;
+      const batchCodes = isFullMode ? [] : state.codes.slice(state.offset, state.offset + batchSize * 5);
       if (batchCodes.length > 0) {
         try {
           const quotes = await tq.getQuickStockList(batchCodes);
@@ -383,8 +384,9 @@ app.post('/api/sync/step', async (req, res) => {
         } catch(e) { console.log('[step:kline] 行情拉取失败:', e.message); }
       }
 
-      // 拉取K线
-      while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+      // 拉取K线（full模式下增大批量，因为没有行情拉取占时间）
+      const klineBatchSize = isFullMode ? Math.max(batchSize, 8) : batchSize;
+      while (state.offset < state.total && processed < klineBatchSize && getTimeLeft(startTime) > 5000) {
         const code = state.codes[state.offset];
         try {
           const klines = await emKline.getDailyKline(code, klineStart, klineEnd);
