@@ -1797,4 +1797,4 @@ app.listen(PORT, '0.0.0.0', async () => {
       }
     } catch(e) { console.log('[init] 行情/评分更新跳过(可能API受限):', e.message); }
   })();
-});
+});// v1.6.9 build trigger
