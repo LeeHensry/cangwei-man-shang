@@ -342,6 +342,7 @@ let stepSyncState = {
   indicators: { offset: 0, total: 0, codes: [], done: false },
   finance: { offset: 0, total: 0, codes: [], done: false },
   score: { offset: 0, total: 0, codes: [], done: false },
+  crowding: { offset: 0, total: 0, codes: [], done: false },
 };
 
 function getTimeLeft(startTime) {
@@ -667,6 +668,79 @@ app.post('/api/sync/step', async (req, res) => {
       // === 拥挤度计算 ===
       await calcAllCrowding();
       result = { step: 'crowding', done: true, timeElapsed: Date.now() - startTime };
+
+    } else if (step === 'crowding-batch') {
+      // === 分批拥挤度计算 ===
+      if (!stepSyncState.crowding || stepSyncState.crowding.done) {
+        const allCodeRows = await dbAll('SELECT code, name FROM stock_info WHERE is_st = 0');
+        stepSyncState.crowding = { offset: 0, total: allCodeRows.length, codes: allCodeRows, done: false, sectorCache: {} };
+      }
+      const state = stepSyncState.crowding;
+      const today = dayjs().format('YYYYMMDD');
+      let processed = 0, crowdCount = 0;
+      const results = [];
+
+      while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+        const { code, name } = state.codes[state.offset];
+        try {
+          const signal = await getCrowdingSignal(code);
+          if (signal) {
+            results.push({
+              code, name, trade_date: today,
+              stock_crowding_score: signal.stock_crowding,
+              sector_crowding_score: signal.sector_crowding,
+              combined_crowding_score: signal.combined_score,
+              level: signal.level,
+              action: signal.action,
+              momentum_bonus: signal.momentum_bonus,
+              crowding_penalty: signal.crowding_penalty,
+              factors_json: JSON.stringify({
+                ret_5d: signal.factors.stock.ret_5d,
+                ret_20d: signal.factors.stock.ret_20d,
+                momentum_state: signal.factors.stock.momentum_accel?.state,
+                momentum_ratio: signal.factors.stock.momentum_accel?.ratio,
+                turnover_pct: signal.factors.stock.turnover_percentile?.percentile,
+                divergence: signal.factors.stock.volume_divergence?.divergence,
+                up_days: signal.factors.stock.consecutive_days?.up_days,
+                sector_up_ratio: signal.factors.sector.up_ratio,
+                leader_lag: signal.factors.sector.leader_lag,
+                reasons: signal.reasons,
+              }),
+            });
+            crowdCount++;
+          }
+        } catch(e) { console.error(`  [crowding-batch] ${code} error:`, e.message); }
+        state.offset++;
+        processed++;
+      }
+
+      // 批量写入
+      if (results.length > 0) {
+        const cols = ['code','name','trade_date','stock_crowding_score','sector_crowding_score','combined_crowding_score','level','action','momentum_bonus','crowding_penalty','factors_json'];
+        const valuesStr = results.map(r =>
+          `('${r.code}','${(r.name||'').replace(/'/g,"''")}','${r.trade_date}',${r.stock_crowding_score ?? 'NULL'},${r.sector_crowding_score ?? 'NULL'},${r.combined_crowding_score ?? 'NULL'},'${r.level || ''}','${r.action || ''}',${r.momentum_bonus ?? 'NULL'},${r.crowding_penalty ?? 'NULL'},'${(r.factors_json||'').replace(/'/g,"''")}')`
+        ).join(',');
+        await dbRun(`INSERT INTO crowding_score (${cols.join(',')}) VALUES ${valuesStr} ON CONFLICT (code,trade_date) DO UPDATE SET stock_crowding_score=EXCLUDED.stock_crowding_score,sector_crowding_score=EXCLUDED.sector_crowding_score,combined_crowding_score=EXCLUDED.combined_crowding_score,level=EXCLUDED.level,action=EXCLUDED.action,momentum_bonus=EXCLUDED.momentum_bonus,crowding_penalty=EXCLUDED.crowding_penalty,factors_json=EXCLUDED.factors_json`);
+
+        // 回写crowding_score到stock_score
+        for (const r of results) {
+          try {
+            await dbRun(`UPDATE stock_score SET crowding_score = ?, crowding_level = ? WHERE code = ? AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = ?)`, [r.combined_crowding_score, r.level, r.code, r.code]);
+          } catch(e) {}
+        }
+      }
+
+      state.done = state.offset >= state.total;
+      result = {
+        step: 'crowding-batch', processed, crowdCount,
+        progress: `${state.offset}/${state.total}`,
+        progressPct: Math.round(state.offset / state.total * 100),
+        done: state.done,
+        timeElapsed: Date.now() - startTime,
+      };
+      if (state.done) {
+        stepSyncState.crowding = { offset: 0, total: 0, codes: [], done: false };
+      }
 
     } else if (step === 'finance') {
       // === 财务数据分批拉取 ===
