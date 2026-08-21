@@ -29,7 +29,7 @@ const tq = ds;
 // 东方财富K线数据源（含换手率字段，腾讯K线不返回换手率）
 const emKline = require('./src/data/eastmoney');
 const { calcAllIndicators } = require('./src/factors/indicators');
-const { scoreAllStocks, classifyIndustry, syncFinancialData } = require('./src/strategies/value_score');
+const { scoreAllStocks, classifyIndustry, syncFinancialData, calcQualityScore, calcValuationScore, calcTechnicalScore, calcTotalScore } = require('./src/strategies/value_score');
 const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
 const { calcAllCrowding, getCrowdingSignal } = require('./src/factors/crowding');
 const dayjs = require('dayjs');
@@ -341,6 +341,7 @@ let stepSyncState = {
   kline: { offset: 0, total: 0, codes: [], done: false },
   indicators: { offset: 0, total: 0, codes: [], done: false },
   finance: { offset: 0, total: 0, codes: [], done: false },
+  score: { offset: 0, total: 0, codes: [], done: false },
 };
 
 function getTimeLeft(startTime) {
@@ -577,6 +578,90 @@ app.post('/api/sync/step', async (req, res) => {
 
       // 评分后顺便算短线信号
       try { await calcAllShortSignals(); } catch(e) { console.log('[step:score] 短线信号失败:', e.message); }
+
+    } else if (step === 'score-batch') {
+      // === 分批评分（解决50秒超时问题）===
+      if (stepSyncState.score.codes.length === 0 || stepSyncState.score.done) {
+        const allCodeRows = await dbAll('SELECT code, name FROM stock_pool WHERE in_pool = 1');
+        stepSyncState.score = { offset: 0, total: allCodeRows.length, codes: allCodeRows, done: false };
+      }
+      const state = stepSyncState.score;
+      const today = dayjs().format('YYYYMMDD');
+      let processed = 0, scoreCount = 0;
+      const results = [];
+
+      while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
+        const { code, name } = state.codes[state.offset];
+        try {
+          const quality = await calcQualityScore(code);
+          if (quality) {
+            const valuation = await calcValuationScore(code);
+            const technical = await calcTechnicalScore(code);
+            const total = calcTotalScore(code, quality, valuation, technical, null, userSettings);
+
+            const latestKline = await dbGet('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [code]);
+            const currentPrice = latestKline?.close;
+            let targetPrice = null, stopLoss = null;
+            if (currentPrice) {
+              const industry = classifyIndustry(code, name);
+              if (total.signal === 'momentum_buy') {
+                targetPrice = +(currentPrice * 1.2).toFixed(2);
+                stopLoss = +(currentPrice * 0.93).toFixed(2);
+              } else if (total.signal === 'buy') {
+                const upside = industry.isNewEconomy ? 0.4 : industry.isOldman ? 0.2 : 0.3;
+                targetPrice = +(currentPrice * (1 + upside)).toFixed(2);
+                stopLoss = +(currentPrice * (industry.isOldman ? 0.92 : 0.85)).toFixed(2);
+              } else {
+                stopLoss = +(currentPrice * (industry.isOldman ? 0.92 : 0.85)).toFixed(2);
+              }
+            }
+            let positionPct = 5;
+            if (total.signal === 'buy') positionPct = total.total_score >= 75 ? 15 : 10;
+            else if (total.signal === 'momentum_buy') positionPct = 5;
+            else if (total.signal === 'watch' || total.signal === 'sell') positionPct = 0;
+
+            results.push({
+              code, name, trade_date: today, strategy: 'value',
+              quality_score: quality.score, valuation_score: valuation.score,
+              technical_score: technical.score, total_score: total.total_score,
+              signal: total.signal, current_price: currentPrice,
+              target_price: targetPrice, stop_loss: stopLoss, position_pct: positionPct,
+              quality_detail: JSON.stringify({ ...quality.breakdown, industry: quality.industry, isNewEconomy: quality.isNewEconomy, isOldman: quality.isOldman, isDistressed: quality.isDistressed }),
+              quality_latest: JSON.stringify(quality.latest),
+              valuation_detail: JSON.stringify(valuation),
+              technical_detail: JSON.stringify({ signals: technical.signals, rsi14: technical.rsi14 }),
+              reason: JSON.stringify(total.reason),
+              crowding_score: null, crowding_level: null,
+            });
+            scoreCount++;
+          }
+        } catch(e) { console.error(`  [score-batch] ${code} error:`, e.message); }
+        state.offset++;
+        processed++;
+      }
+
+      // 批量写入本批结果
+      if (results.length > 0) {
+        const cols = ['code','name','trade_date','strategy','quality_score','valuation_score','technical_score','total_score','signal','current_price','target_price','stop_loss','position_pct','quality_detail','quality_latest','valuation_detail','technical_detail','reason','fund_score','sentiment_score','crowding_score','crowding_level'];
+        const valuesStr = results.map(r =>
+          `('${(r.code||'').replace(/'/g,"''")}','${(r.name||'').replace(/'/g,"''")}','${r.trade_date}','${r.strategy}',${r.quality_score ?? 'NULL'},${r.valuation_score ?? 'NULL'},${r.technical_score ?? 'NULL'},${r.total_score ?? 'NULL'},'${r.signal || ''}',${r.current_price ?? 'NULL'},${r.target_price ?? 'NULL'},${r.stop_loss ?? 'NULL'},${r.position_pct ?? 'NULL'},'${(r.quality_detail||'').replace(/'/g,"''")}','${(r.quality_latest||'').replace(/'/g,"''")}','${(r.valuation_detail||'').replace(/'/g,"''")}','${(r.technical_detail||'').replace(/'/g,"''")}','${(r.reason||'').replace(/'/g,"''")}',0,0,${r.crowding_score ?? 'NULL'},${r.crowding_level ? `'${r.crowding_level}'` : 'NULL'})`
+        ).join(',');
+        await dbRun(`INSERT INTO stock_score (${cols.join(',')}) VALUES ${valuesStr} ON CONFLICT (code,trade_date,strategy) DO UPDATE SET quality_score=EXCLUDED.quality_score,valuation_score=EXCLUDED.valuation_score,technical_score=EXCLUDED.technical_score,total_score=EXCLUDED.total_score,signal=EXCLUDED.signal,current_price=EXCLUDED.current_price,target_price=EXCLUDED.target_price,stop_loss=EXCLUDED.stop_loss,position_pct=EXCLUDED.position_pct,quality_detail=EXCLUDED.quality_detail,quality_latest=EXCLUDED.quality_latest,valuation_detail=EXCLUDED.valuation_detail,technical_detail=EXCLUDED.technical_detail,reason=EXCLUDED.reason`);
+      }
+
+      state.done = state.offset >= state.total;
+      result = {
+        step: 'score-batch', processed, scoreCount,
+        progress: `${state.offset}/${state.total}`,
+        progressPct: Math.round(state.offset / state.total * 100),
+        done: state.done,
+        timeElapsed: Date.now() - startTime,
+      };
+      if (state.done) {
+        stepSyncState.score = { offset: 0, total: 0, codes: [], done: false };
+        // 评分完成后算短线信号
+        try { await calcAllShortSignals(); } catch(e) {}
+      }
 
     } else if (step === 'crowding') {
       // === 拥挤度计算 ===
