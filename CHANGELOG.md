@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.1.1 (2026-07-30)
+## v1.6.3 (2026-08-21)
+
+### 🐛 Bug 修复
+- **修复换手率turnover为null的根本原因**：腾讯K线API(fqkline)只返回6个字段(日期/O/C/H/L/成交量)，不包含换手率。将K线数据源从腾讯切换到东方财富(push2his.eastmoney.com)，东方财富返回11个字段含f61换手率(%)
+- 涉及4处K线调用：/api/sync、/api/sync/step(kline)、runStepKline、cron同步
+- 日期格式从YYYY-MM-DD改为YYYYMMDD（东方财富API要求）
+
+### 🆕 新增
+- **财务数据分步拉取**：新增finance step到/api/sync/step，分批拉取东方财富datacenter财务数据，避免scoreAllStocks内同步拉取200只财务数据超时
+- full-pipeline在评分前自动检查并拉取财务数据
+- GitHub Actions workflow新增finance选项
+
+---
+
+## v1.6.2 (2026-08-20)
 
 ### 🐛 Bug 修复
 - **修复首次部署页面空白**：新增 seed.db 种子数据库（54支核心股票+评分+K线+拥挤度数据），Render 启动时自动从 seed 恢复，页面不会空白
