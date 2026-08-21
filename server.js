@@ -542,12 +542,16 @@ app.post('/api/sync/step', async (req, res) => {
             const inds = calcAllIndicators(ks);
             // 只写入最近250天的指标，减少DB写入量
             const recentInds = inds.slice(-250).filter(r => r.ma5 !== null);
-            for (let j = 0; j < recentInds.length; j += 200) {
-              await dbBatch(recentInds.slice(j, j + 200).map(r => ({ sql: `INSERT OR REPLACE INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args: [code, r.trade_date, r.ma5, r.ma10, r.ma20, r.ma60, r.ma120, r.ma250, r.vol_ma5, r.vol_ma20, r.macd_dif, r.macd_dea, r.macd_bar, r.rsi6, r.rsi14, r.kdj_k, r.kdj_d, r.kdj_j, r.boll_upper, r.boll_mid, r.boll_lower] })));
+            // 使用多行VALUES单一INSERT，减少DB往返
+            if (recentInds.length > 0) {
+              const valuesStr = recentInds.map(r =>
+                `('${code}','${r.trade_date}',${r.ma5 ?? 'NULL'},${r.ma10 ?? 'NULL'},${r.ma20 ?? 'NULL'},${r.ma60 ?? 'NULL'},${r.ma120 ?? 'NULL'},${r.ma250 ?? 'NULL'},${r.vol_ma5 ?? 'NULL'},${r.vol_ma20 ?? 'NULL'},${r.macd_dif ?? 'NULL'},${r.macd_dea ?? 'NULL'},${r.macd_bar ?? 'NULL'},${r.rsi6 ?? 'NULL'},${r.rsi14 ?? 'NULL'},${r.kdj_k ?? 'NULL'},${r.kdj_d ?? 'NULL'},${r.kdj_j ?? 'NULL'},${r.boll_upper ?? 'NULL'},${r.boll_mid ?? 'NULL'},${r.boll_lower ?? 'NULL'})`
+              ).join(',');
+              await dbRun(`INSERT INTO technical_indicators (code,trade_date,ma5,ma10,ma20,ma60,ma120,ma250,vol_ma5,vol_ma20,macd_dif,macd_dea,macd_bar,rsi6,rsi14,kdj_k,kdj_d,kdj_j,boll_upper,boll_mid,boll_lower) VALUES ${valuesStr} ON CONFLICT (code,trade_date) DO UPDATE SET ma5=EXCLUDED.ma5,ma10=EXCLUDED.ma10,ma20=EXCLUDED.ma20,ma60=EXCLUDED.ma60,ma120=EXCLUDED.ma120,ma250=EXCLUDED.ma250,vol_ma5=EXCLUDED.vol_ma5,vol_ma20=EXCLUDED.vol_ma20,macd_dif=EXCLUDED.macd_dif,macd_dea=EXCLUDED.macd_dea,macd_bar=EXCLUDED.macd_bar,rsi6=EXCLUDED.rsi6,rsi14=EXCLUDED.rsi14,kdj_k=EXCLUDED.kdj_k,kdj_d=EXCLUDED.kdj_d,kdj_j=EXCLUDED.kdj_j,boll_upper=EXCLUDED.boll_upper,boll_mid=EXCLUDED.boll_mid,boll_lower=EXCLUDED.boll_lower`);
             }
             indCount++;
           }
-        } catch(e) {}
+        } catch(e) { console.log(`[indicators] ${code} error:`, e.message); }
         state.offset++;
         processed++;
       }
