@@ -499,7 +499,7 @@ app.post('/api/sync/step', async (req, res) => {
       // === 用DB中已有数据批量计算换手率 ===
       // turnover(%) = volume(手) * 100(股/手) * close / (circ_mv * 1e8) * 100
       const offset = parseInt(req.body?.offset || '0');
-      const batchLimit = 5000;
+      const batchLimit = 1000;
       
       // 查找turnover为null的K线，关联stock_info获取circ_mv
       const rows = await dbAll(`
