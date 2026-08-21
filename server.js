@@ -1326,6 +1326,53 @@ app.get('/api/universe/stats', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// 批量上传Universe数据（本地脚本使用）
+app.post('/api/universe/upload-batch', async (req, res) => {
+  try {
+    const { stocks } = req.body;
+    if (!Array.isArray(stocks) || stocks.length === 0) {
+      return res.status(400).json({ error: 'stocks数组为空' });
+    }
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const stmts = stocks.map(s => ({
+      sql: `INSERT INTO stock_universe (code,name,market,total_mv,circ_mv,close,pct_chg,amount,is_st,updated_at,in_universe,universe_score,industry_group,industry_factor,score_mv,score_liq,score_active,score_risk,score_val,score_data,select_reason)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+            ON CONFLICT(code) DO UPDATE SET
+              name=EXCLUDED.name,market=EXCLUDED.market,total_mv=EXCLUDED.total_mv,circ_mv=EXCLUDED.circ_mv,
+              close=EXCLUDED.close,pct_chg=EXCLUDED.pct_chg,amount=EXCLUDED.amount,is_st=EXCLUDED.is_st,
+              updated_at=EXCLUDED.updated_at,in_universe=1,universe_score=EXCLUDED.universe_score,
+              industry_group=EXCLUDED.industry_group,industry_factor=EXCLUDED.industry_factor,
+              score_mv=EXCLUDED.score_mv,score_liq=EXCLUDED.score_liq,score_active=EXCLUDED.score_active,
+              score_risk=EXCLUDED.score_risk,score_val=EXCLUDED.score_val,score_data=EXCLUDED.score_data,
+              select_reason=EXCLUDED.select_reason`,
+      args: [s.code,s.name,s.market,s.total_mv||null,s.circ_mv||null,s.close||null,s.pct_chg||null,
+             s.amount||null,s.is_st||0,now,s.universe_score||0,s.industry_group||'other',
+             s.industry_factor||1.0,s.score_mv||50,s.score_liq||50,s.score_active||50,
+             s.score_risk||50,s.score_val||50,s.score_data||50,s.select_reason||'data']
+    }));
+    await dbBatch(stmts);
+    // 同时更新stock_info表
+    const infoStmts = stocks.map(s => ({
+      sql: `INSERT INTO stock_info (code,name,close,pct_chg,updated_at) VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,close=EXCLUDED.close,pct_chg=EXCLUDED.pct_chg,updated_at=EXCLUDED.updated_at`,
+      args: [s.code,s.name,s.close||null,s.pct_chg||null,now]
+    }));
+    await dbBatch(infoStmts);
+    res.json({ ok: true, written: stocks.length });
+  } catch(e) {
+    console.error('upload-batch error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 重置Universe（清除in_universe标记，为批量上传做准备）
+app.post('/api/universe/reset', async (req, res) => {
+  try {
+    await dbRun(`UPDATE stock_universe SET in_universe=0`);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/stock-pool/add', async (req, res) => {
   try {
     const { code, name } = req.body;

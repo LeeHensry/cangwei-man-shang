@@ -216,20 +216,31 @@ async function getStockList() {
 async function getQuickStockList(stockCodes) {
   const allStocks = [];
   const codes = stockCodes.map(toTencentCode);
-  const batchSize = 80;
-  
+  const batchSize = 20; // 小批次更稳定，避免Render连接被限流
+
   for (let i = 0; i < codes.length; i += batchSize) {
     const batch = codes.slice(i, i + batchSize).join(',');
-    try {
-      const res = await Tencent.get(`/q=${batch}`);
-      const text = decodeGBK(res.data);
-      const quotes = parseFullQuote(text);
-      allStocks.push(...quotes.filter(q => q.close > 0 && q.name));
-      await sleep(100);
-    } catch (e) {
-      console.error(`批次失败:`, e.message);
+    let retries = 3;
+    while (retries >= 0) {
+      try {
+        const res = await Tencent.get(`/q=${batch}`, { timeout: 8000 });
+        const text = decodeGBK(res.data);
+        const quotes = parseFullQuote(text);
+        const valid = quotes.filter(q => q.close > 0 && q.name);
+        allStocks.push(...valid);
+        break; // 成功
+      } catch (e) {
+        retries--;
+        if (retries < 0) {
+          console.error(`[tencent] 批次${Math.floor(i/batchSize)+1}/${Math.ceil(codes.length/batchSize)}失败:`, e.message?.substring(0,80));
+        } else {
+          await sleep(500);
+        }
+      }
     }
+    await sleep(250); // 更长延时避免被限流
   }
+  console.log(`[tencent] getQuickStockList: 请求${codes.length}只, 返回${allStocks.length}只有效行情`);
   return allStocks;
 }
 

@@ -36,7 +36,7 @@ const EastMoneyFinance = axios.create({
 
 const EastMoneyEmweb = axios.create({
   baseURL: 'https://push2.eastmoney.com/api/qt/clist/get',
-  timeout: 15000,
+  timeout: 8000, // 缩短超时，Render上不可用时快速失败降级
   headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     'Referer': 'https://quote.eastmoney.com/',
