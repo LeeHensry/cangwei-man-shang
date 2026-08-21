@@ -26,6 +26,8 @@ const { dbGet, dbAll, dbRun, dbBatch, dbIsReady, usePostgres, useTurso, client }
 const stockPool = require('./src/data/stock_pool');
 const ds = require('./src/data/datasources');
 const tq = ds;
+// 东方财富K线数据源（含换手率字段，腾讯K线不返回换手率）
+const emKline = require('./src/data/eastmoney');
 const { calcAllIndicators } = require('./src/factors/indicators');
 const { scoreAllStocks, classifyIndustry } = require('./src/strategies/value_score');
 const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
@@ -229,14 +231,14 @@ app.post('/api/sync', async (req, res) => {
       await dbBatch(valData.map(q => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [q.code, today, q.pe] })));
       emitProgress('quote', `行情更新完成：${quotes.length} 支`, 15);
       const klineHistoryDays = syncMode === 'full' ? 730 : 60;
-      const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
-      const klineEnd = dayjs().format('YYYY-MM-DD');
+      const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYYMMDD');
+      const klineEnd = dayjs().format('YYYYMMDD');
       emitProgress('kline', `更新K线数据（${syncMode === 'full' ? '全量2年' : '近60天增量'}）...`, 18);
       let klineCount = 0;
       for (let i = 0; i < codes.length; i++) {
         const code = codes[i];
         try {
-          const klines = await tq.getDailyKline(code, klineStart, klineEnd);
+          const klines = await emKline.getDailyKline(code, klineStart, klineEnd);
           if (klines.length > 0) {
             for (let j = 0; j < klines.length; j += 200) {
               await dbBatch(klines.slice(j, j+200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
@@ -355,8 +357,8 @@ app.post('/api/sync/step', async (req, res) => {
 
       const state = stepSyncState.kline;
       const klineHistoryDays = req.body?.full ? 730 : 60;
-      const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
-      const klineEnd = dayjs().format('YYYY-MM-DD');
+      const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYYMMDD');
+      const klineEnd = dayjs().format('YYYYMMDD');
       let processed = 0, klineCount = 0, errors = 0;
 
       // 先拉取本批的实时行情
@@ -384,7 +386,7 @@ app.post('/api/sync/step', async (req, res) => {
       while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
         const code = state.codes[state.offset];
         try {
-          const klines = await tq.getDailyKline(code, klineStart, klineEnd);
+          const klines = await emKline.getDailyKline(code, klineStart, klineEnd);
           if (klines.length > 0) {
             for (let j = 0; j < klines.length; j += 200) {
               await dbBatch(klines.slice(j, j + 200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
@@ -572,8 +574,8 @@ async function runStepKline(startTime, batchSize, full) {
 
   const state = stepSyncState.kline;
   const klineHistoryDays = full ? 730 : 60;
-  const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYY-MM-DD');
-  const klineEnd = dayjs().format('YYYY-MM-DD');
+  const klineStart = dayjs().subtract(klineHistoryDays, 'day').format('YYYYMMDD');
+  const klineEnd = dayjs().format('YYYYMMDD');
   let processed = 0, klineCount = 0, errors = 0;
 
   // 行情
@@ -603,7 +605,7 @@ async function runStepKline(startTime, batchSize, full) {
     const batch = [];
     for (let c = 0; c < concurrency; c++) {
       const code = state.codes[state.offset + c];
-      batch.push(tq.getDailyKline(code, klineStart, klineEnd).catch(e => ({ code, error: e, klines: [] })));
+      batch.push(emKline.getDailyKline(code, klineStart, klineEnd).catch(e => ({ code, error: e, klines: [] })));
     }
     const results = await Promise.all(batch);
     // 收集所有K线一次性批量写入
@@ -1135,12 +1137,12 @@ async function runAutoSync(mode = 'incremental') {
 
     // 2. 拉取K线
     const klineHistoryDays = mode === 'full' ? 730 : 60;
-    const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYY-MM-DD');
-    const klineEnd = dayjs().format('YYYY-MM-DD');
+    const klineStart = dayjs().subtract(klineHistoryDays,'day').format('YYYYMMDD');
+    const klineEnd = dayjs().format('YYYYMMDD');
     let klineCount = 0;
     for (let i = 0; i < codes.length; i++) {
       try {
-        const klines = await tq.getDailyKline(codes[i], klineStart, klineEnd);
+        const klines = await emKline.getDailyKline(codes[i], klineStart, klineEnd);
         if (klines.length > 0) {
           for (let j = 0; j < klines.length; j += 200) {
             await dbBatch(klines.slice(j, j+200).map(k => ({ sql: `INSERT OR REPLACE INTO daily_kline (code,trade_date,open,close,high,low,volume,amount,amplitude,pct_chg,chg,turnover) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, args: [k.code, k.trade_date, k.open, k.close, k.high, k.low, k.volume, k.amount, k.amplitude, k.pct_chg, k.chg, k.turnover] })));
