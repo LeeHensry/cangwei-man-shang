@@ -1259,17 +1259,22 @@ app.get('/api/monitor/health', async (req, res) => {
       score: (await dbGet('SELECT MAX(trade_date) as d FROM stock_score'))?.d || null,
       crowding: (await dbGet('SELECT MAX(trade_date) as d FROM crowding_score'))?.d || null,
     };
-    // 期望最新交易日：周六日→上周五；工作日15点前→昨天；15点后→今天
-    const now = dayjs();
-    const wd = now.day();
+    // 期望最新交易日（按北京时间，Render 服务器为 UTC）：周六日→上周五；工作日15点前→昨天；15点后→今天
+    const bj = dayjs().add(8, 'hour');
+    const wd = bj.day();
     let expected;
-    if (wd === 0) expected = now.subtract(2, 'day');
-    else if (wd === 6) expected = now.subtract(1, 'day');
-    else if (now.hour() < 15) expected = now.subtract(1, 'day');
-    else expected = now;
+    if (wd === 0) expected = bj.subtract(2, 'day');
+    else if (wd === 6) expected = bj.subtract(1, 'day');
+    else if (bj.hour() < 15) expected = bj.subtract(1, 'day');
+    else expected = bj;
     const expectedDate = expected.format('YYYY-MM-DD');
     const norm = (d) => d ? String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') : null;
-    const diffDays = (d) => { const n = norm(d); return n ? expected.diff(dayjs(n), 'day') : null; };
+    const toUTC = (s) => { const p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); };
+    const diffDays = (d) => {
+      const n = norm(d);
+      if (!n) return null;
+      return Math.round((toUTC(expectedDate) - toUTC(n)) / 86400000);
+    };
     // 信号分布（按最新评分日期，value 策略）
     let signals = { buy: 0, watch: 0, hold: 0, sell: 0, momentum_buy: 0, total: 0 };
     if (dates.score) {
