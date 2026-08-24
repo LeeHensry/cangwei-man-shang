@@ -1791,6 +1791,18 @@ async function ensureSeedData() {
   } catch(e) { console.log('[init] 数据库检查失败:', e.message); }
 }
 
+// Debug: 直接测试单只股票评分
+app.get('/api/debug/score/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const val = await dbGet('SELECT pe, pe_ttm, pb FROM valuation WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [code]);
+    const info = await dbGet('SELECT name FROM stock_info WHERE code = ?', [code]);
+    const v = await calcValuationScore(code);
+    const q = await calcQualityScore(code);
+    res.json({ code, name: info?.name, val_from_db: val, valuation_result: v, quality_score: q?.score });
+  } catch(e) { res.status(500).json({ error: e.message, stack: e.stack?.slice(0,500) }); }
+});
+
 app.listen(PORT, '0.0.0.0', async () => {
   console.log('═══════════════════════════════════════');
   console.log('  🥃 仓位满上 Top Up  服务已启动');
