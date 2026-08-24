@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * 客户端控制分批拥挤度计算
- * 密集调用crowding-batch,并行ping保活,直到done
+ * 通用客户端控制分批step执行
+ * 用法: node step-runner.js <step> <batchSize> [stuckMax]
+ * 例: node step-runner.js indicators 30 8
  */
 const https = require('https');
 
 const BASE = 'https://cangwei-man-shang.onrender.com';
-const BATCH = 20;
+const STEP = process.argv[2] || 'indicators';
+const BATCH = parseInt(process.argv[3]) || 20;
+const STUCK_MAX = parseInt(process.argv[4]) || 8;
 
 function req(path, method='GET', timeout=55000) {
   return new Promise((resolve, reject) => {
@@ -31,7 +34,7 @@ const sleep = ms => new Promise(r=>setTimeout(r,ms));
     while (!ok && retries < 3) {
       try {
         const [res] = await Promise.all([
-          req(`/api/sync/step?step=crowding-batch&batchSize=${BATCH}`, 'POST', 50000),
+          req(`/api/sync/step?step=${STEP}&batchSize=${BATCH}`, 'POST', 50000),
           req('/api/version','GET',8000).catch(()=>null)
         ]);
         if (res._parse) throw new Error(`HTTP ${res.status}: ${res.raw.slice(0,100)}`);
@@ -40,8 +43,8 @@ const sleep = ms => new Promise(r=>setTimeout(r,ms));
         if (prog === lastProgress) stuck++; else stuck = 0;
         lastProgress = prog;
         const el = ((Date.now()-t0)/1000).toFixed(0);
-        console.log(`[${el}s] progress=${prog} done=${res.done} processed=${res.processed} stuck=${stuck}`);
-        if (res.done) { done = true; console.log('=== crowding 全部完成! ==='); }
+        console.log(`[${el}s] ${STEP}: progress=${prog} done=${res.done} cnt=${res.indCount ?? res.klineCount ?? res.scoreCount ?? res.processed} stuck=${stuck}`);
+        if (res.done) { done = true; console.log(`=== ${STEP} 完成! ===`); }
         ok = true;
       } catch(e) {
         retries++;
@@ -50,8 +53,8 @@ const sleep = ms => new Promise(r=>setTimeout(r,ms));
         await req('/api/version','GET',10000).catch(()=>null);
       }
     }
-    if (!ok) { console.log('跳过一轮, 3次重试失败'); await sleep(5000); }
-    if (stuck >= 6) { console.log('进度连续6轮无变化, 暂停30s...'); await sleep(30000); stuck = 0; }
+    if (!ok) { console.log('3次重试失败, 暂停15s'); await sleep(15000); }
+    if (stuck >= STUCK_MAX) { console.log('进度连续无变化, 暂停30s...'); await sleep(30000); stuck = 0; }
     await sleep(300);
   }
   console.log(`总耗时${((Date.now()-t0)/1000).toFixed(0)}s`);

@@ -15,6 +15,7 @@
 - **Render时区坑**：服务器时间为UTC，node-cron表达式必须写UTC时间（北京时间-8小时）。Render免费版进程在无外部请求时会被suspend，setInterval/setTimeout在休眠期间不执行，必须靠外部HTTP请求（如GitHub Actions）保活才能让cron按时触发
 - **保活方案**：GitHub Actions每10分钟curl `/api/version`（.github/workflows/keep-alive.yml）
 - **当前版本**：v1.6.8
+- **当前版本(实际)**：v1.7.6（2026-08-24）
 - **Universe v2（v1.6.4+）**：六维评分选股(市值25%/流动性25%/活跃度15%/风险15%/估值10%/数据质量10%)；行业调节系数+硬上限（银行0.90≤50只/地产0.75≤25只/高成长1.02~1.08/传统周期0.88~0.95）；三层入选(核心大盘+行业代表+成长活跃)；亏损股分层(PE≤-1000硬剔除/轻度中度亏损×0.7惩罚)；跌停硬剔除改为风险扣分
 - **数据源可用性**：东方财富clist/get全市场列表API在Render上完全不可用；腾讯没有全市场列表接口只有批量行情查询(qt.gtimg.cn)；**Universe刷新采用本地脚本方案**(scripts/upload-universe.js本地拉腾讯行情→打分→/api/universe/upload-batch上传)
 - **腾讯行情字段位置**：parts[3]=close, [6]=volume(手), [32]=pct_chg, [37]=amount(万元需×10000转元), [38]=turnover%, [39]=PE, [43]=amplitude, [44]=circ_mv(亿), [45]=total_mv(亿)；tencent.js parseFullQuote已修复amount单位bug
@@ -25,3 +26,10 @@
 - **动态Universe**：v1.6.0新增stock_universe表，从全市场按市值降序动态筛选Top 1000只（排除ST/退市/北交所/价格<2元），月初自动更新；股票池(200只)从Universe中按流动性45%+市值30%+动量25%综合打分选出；静态JSON保留作降级兜底
 - **数据库迁移**：v1.6.0从Turso(SQLite)迁移到Supabase(PostgreSQL)，db.js内置SQL方言转换器（?→$N, INSERT OR REPLACE→ON CONFLICT），环境变量SUPABASE_DB_URL；本地开发仍用better-sqlite3
 - **性能优化**：v1.6.1优化指标计算查询——只SELECT必要字段(trade_date,close,high,low,volume)而非SELECT *，只写最近250天指标，减少Supabase远程DB传输量
+- **⚠️ SQL占位符铁律(v1.7.4教训)**：server.js写SQL必须用`?`占位符让db.js方言转换器转`$N`；**禁止手写`$N`**——db.js只处理`?`，手写`$N`在线上PostgreSQL会INSERT静默失败（无报错但写不进DB）。score-batch是字符串拼接SQL所以没踩坑
+- **⚠️ Render内存state会丢**：/api/sync/step各step的进度state存进程内存，Render suspend后重置为0。客户端必须自维护进度(如rescore-v3.js传codes、crowd-run.js密集调用)或服务端setTimeout自调度
+- **评分缓存**：/api/stocks/:code和列表读的是stock_score表缓存(DB)，不是实时计算。改评分逻辑后必须重跑评分(score-codes)才能生效，debug接口/api/debug/score/:code可看实时计算vs DB差异
+- **crowding性能(v1.7.6)**：crowding.js有O(N²)嵌套计算(getCrowdingSignal→calcSectorCrowding→calcStockCrowding)，v1.7.6加两级内存缓存(个股`code|tradeDate`+板块`industry|tradeDate`)后单只20s→0.4s。缓存键含trade_date自动跨日失效，导出clearCrowdingCache()
+- **财务数据本地上传**：Render上东财datacenter财务API可用性差，用scripts/upload-finance.js本地拉(getFinancialData在src/data/finance.js)→POST /api/sync/step step=finance-upload批量上传
+- **退市股清理**：POST /api/cleanup/remove-stocks {codes:[...]} 从stock_info/stock_score/stock_universe/valuation/crowding_score/financial_indicator/daily_kline/technical_indicators 8张表删除
+- **无PE估值分(v1.7.0)**：无PE时V分上限55、method='price_position_only(no_pe_data)'带warning；无财报Q分默认30。避免垃圾股因股价低位拿V=100

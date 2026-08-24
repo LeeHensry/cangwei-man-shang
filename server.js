@@ -421,10 +421,15 @@ app.post('/api/sync/step', async (req, res) => {
         );
         const emResults = await Promise.all(emPromises);
         
-        // 对东方财富失败的股票，回退到腾讯K线并计算换手率
+        // 对东方财富失败或数据不新鲜的股票，回退到腾讯K线并计算换手率
         const fallbackCodes = [];
+        const freshCutoff = dayjs().subtract(2, 'day').format('YYYYMMDD'); // 最近2个自然日内必须有K线
         for (let i = 0; i < emResults.length; i++) {
-          if (!emResults[i] || emResults[i].length === 0) {
+          const kl = emResults[i];
+          if (!kl || kl.length === 0) { fallbackCodes.push(batchCodes[i]); continue; }
+          // 东财返回了数据但最新日期滞后(缺最近2个自然日以上)→视为不完整,用腾讯补齐
+          const lastDate = kl[kl.length - 1]?.trade_date;
+          if (lastDate && String(lastDate) < freshCutoff) {
             fallbackCodes.push(batchCodes[i]);
           }
         }
@@ -463,10 +468,11 @@ app.post('/api/sync/step', async (req, res) => {
           });
         }
         
-        // 合并结果写入DB
+        // 合并结果写入DB（回退的股票只用腾讯数据，避免与东财部分数据重复/复权不一致）
+        const fallbackSet = new Set(fallbackCodes);
         const allKlines = [];
         for (let i = 0; i < emResults.length; i++) {
-          if (emResults[i] && emResults[i].length > 0) {
+          if (emResults[i] && emResults[i].length > 0 && !fallbackSet.has(batchCodes[i])) {
             allKlines.push(...emResults[i]);
           }
         }
