@@ -1246,13 +1246,13 @@ app.get('/api/db/stats', async (req, res) => {
 app.get('/api/monitor/health', async (req, res) => {
   try {
     const db = {
-      pool: (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0,
-      stocks: (await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0,
-      klines: (await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0,
-      indicators: (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0,
-      scores: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0,
-      crowding: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0,
-      finance: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0,
+      pool: Number((await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0),
+      stocks: Number((await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0),
+      klines: Number((await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0),
+      indicators: Number((await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0),
+      scores: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0),
+      crowding: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0),
+      finance: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0),
     };
     const dates = {
       kline: (await dbGet('SELECT MAX(trade_date) as d FROM daily_kline'))?.d || null,
@@ -1277,9 +1277,9 @@ app.get('/api/monitor/health', async (req, res) => {
       const counts = {};
       for (const r of rows) counts[r.signal] = r.c;
       signals = {
-        buy: counts.buy || 0, watch: counts.watch || 0, hold: counts.hold || 0,
-        sell: counts.sell || 0, momentum_buy: counts.momentum_buy || 0,
-        total: rows.reduce((a, r) => a + r.c, 0),
+        buy: Number(counts.buy || 0), watch: Number(counts.watch || 0), hold: Number(counts.hold || 0),
+        sell: Number(counts.sell || 0), momentum_buy: Number(counts.momentum_buy || 0),
+        total: rows.reduce((a, r) => a + Number(r.c), 0),
       };
     }
     // 同步状态（内存进度，suspend 后可能非 idle）
