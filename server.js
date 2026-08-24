@@ -1799,7 +1799,8 @@ app.get('/api/debug/score/:code', async (req, res) => {
     const info = await dbGet('SELECT name FROM stock_info WHERE code = ?', [code]);
     const v = await calcValuationScore(code);
     const q = await calcQualityScore(code);
-    res.json({ code, name: info?.name, val_from_db: val, valuation_result: v, quality_score: q?.score });
+    const dbScores = await dbAll('SELECT trade_date, strategy, valuation_score, valuation_detail, total_score FROM stock_score WHERE code = ? ORDER BY trade_date DESC LIMIT 5', [code]);
+    res.json({ code, name: info?.name, val_from_db: val, valuation_result: v, quality_score: q?.score, db_scores: dbScores });
   } catch(e) { res.status(500).json({ error: e.message, stack: e.stack?.slice(0,500) }); }
 });
 
