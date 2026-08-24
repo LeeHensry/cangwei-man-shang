@@ -12,6 +12,16 @@
  */
 const { dbGet, dbAll, dbRun, dbBatch } = require('../data/db');
 
+// ========== 内存缓存（进程内共享，避免板块内O(N²)重复计算）==========
+// 键: `${code}|${tradeDate}` / `${industry}|${tradeDate}`
+const _stockCrowdingCache = new Map();
+const _sectorCrowdingCache = new Map();
+
+function clearCrowdingCache() {
+  _stockCrowdingCache.clear();
+  _sectorCrowdingCache.clear();
+}
+
 // ========== 个股级拥挤度因子 ==========
 
 /**
@@ -100,12 +110,20 @@ function calcConsecutiveDays(klines) {
  * 个股拥挤度综合评分（0-100）
  */
 async function calcStockCrowding(code) {
+  // 缓存命中直接返回（同交易日重复计算不再重跑）
+  const latestRow = await dbGet('SELECT MAX(trade_date) as d FROM daily_kline WHERE code = ?', [code]);
+  const cacheDate = latestRow?.d || '';
+  const cacheKey = `${code}|${cacheDate}`;
+  if (_stockCrowdingCache.has(cacheKey)) return _stockCrowdingCache.get(cacheKey);
+
   const klines = await dbAll(`
     SELECT trade_date, close, volume, amount, pct_chg, high, low, turnover
     FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 520
   `, [code]);
   if (klines.length < 30) {
-    return { score: 50, factors: {}, level: 'normal', signal: 'hold' };
+    const _r = { score: 50, factors: {}, level: 'normal', signal: 'hold' };
+    _stockCrowdingCache.set(cacheKey, _r);
+    return _r;
   }
   const momentum = calcMomentumAcceleration(klines);
   const turnover = calcTurnoverPercentile(klines);
@@ -161,7 +179,7 @@ async function calcStockCrowding(code) {
   else if (score < 75) { level = 'hot'; signal = 'hold'; }
   else if (score < 90) { level = 'crowded'; signal = 'trim'; }
   else { level = 'extreme'; signal = 'exit'; }
-  return {
+  const result = {
     score, level, signal,
     factors: {
       momentum_accel: momentum,
@@ -173,6 +191,8 @@ async function calcStockCrowding(code) {
       raw_scores: factors,
     }
   };
+  _stockCrowdingCache.set(cacheKey, result);
+  return result;
 }
 
 // ========== 板块级拥挤度 ==========
@@ -181,6 +201,8 @@ async function calcSectorCrowding(industryName) {
   const latestDateRow = await dbGet('SELECT MAX(trade_date) as d FROM stock_score');
   const latestDate = latestDateRow?.d;
   if (!latestDate) return { score: 50, level: 'normal' };
+  const cacheKey = `${industryName}|${latestDate}`;
+  if (_sectorCrowdingCache.has(cacheKey)) return _sectorCrowdingCache.get(cacheKey);
   const allScores = await dbAll(`
     SELECT s.code, s.total_score, s.technical_score, s.quality_detail
     FROM stock_score s WHERE s.trade_date = ? AND s.strategy = 'value'
@@ -191,7 +213,11 @@ async function calcSectorCrowding(industryName) {
       return qd.industry === industryName;
     } catch(e) { return false; }
   });
-  if (sectorStocks.length < 3) return { score: 50, level: 'normal', stock_count: sectorStocks.length };
+  if (sectorStocks.length < 3) {
+    const _r = { score: 50, level: 'normal', stock_count: sectorStocks.length };
+    _sectorCrowdingCache.set(cacheKey, _r);
+    return _r;
+  }
   let totalCrowding = 0;
   let validCount = 0;
   let momentumUp = 0;
@@ -206,7 +232,11 @@ async function calcSectorCrowding(industryName) {
       if (k) pctChanges.push(k.pct_chg || 0);
     }
   }
-  if (validCount === 0) return { score: 50, level: 'normal', stock_count: 0 };
+  if (validCount === 0) {
+    const _r = { score: 50, level: 'normal', stock_count: 0 };
+    _sectorCrowdingCache.set(cacheKey, _r);
+    return _r;
+  }
   const avgCrowding = totalCrowding / validCount;
   const upRatio = pctChanges.filter(p => p > 0).length / Math.max(pctChanges.length, 1);
   let syncScore = 0;
@@ -236,7 +266,7 @@ async function calcSectorCrowding(industryName) {
   else if (sectorScore < 75) level = 'hot';
   else if (sectorScore < 90) level = 'crowded';
   else level = 'extreme';
-  return {
+  const _result = {
     score: sectorScore,
     level,
     stock_count: validCount,
@@ -245,6 +275,8 @@ async function calcSectorCrowding(industryName) {
     leader_lag_score: leaderLagScore,
     avg_stock_crowding: +avgCrowding.toFixed(1),
   };
+  _sectorCrowdingCache.set(cacheKey, _result);
+  return _result;
 }
 
 async function calcAllSectorCrowding() {
@@ -503,4 +535,5 @@ module.exports = {
   calcAllSectorCrowding,
   getCrowdingSignal,
   calcAllCrowding,
+  clearCrowdingCache,
 };
