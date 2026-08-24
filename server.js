@@ -580,6 +580,71 @@ app.post('/api/sync/step', async (req, res) => {
       // 评分后顺便算短线信号
       try { await calcAllShortSignals(); } catch(e) { console.log('[step:score] 短线信号失败:', e.message); }
 
+    } else if (step === 'score-codes') {
+      // === 指定股票列表评分（客户端控制进度，不依赖服务器内存state）===
+      const codesParam = req.query.codes || req.body?.codes;
+      const codeList = (codesParam || '').split(',').map(s => s.trim()).filter(s => /^\d{6}$/.test(s));
+      if (codeList.length === 0) {
+        result = { step: 'score-codes', error: 'no codes provided', processed: 0 };
+      } else {
+        const today = dayjs().format('YYYYMMDD');
+        let processed = 0, scoreCount = 0;
+        const results = [];
+        for (const code of codeList) {
+          if (getTimeLeft(startTime) < 5000) break;
+          try {
+            const info = await dbGet('SELECT name FROM stock_info WHERE code = ?', [code]);
+            const name = info?.name || code;
+            const quality = await calcQualityScore(code);
+            if (quality) {
+              const valuation = await calcValuationScore(code);
+              const technical = await calcTechnicalScore(code);
+              const total = calcTotalScore(code, quality, valuation, technical, null, userSettings);
+              const latestKline = await dbGet('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [code]);
+              const currentPrice = latestKline?.close;
+              let targetPrice = null, stopLoss = null;
+              if (currentPrice) {
+                const industry = classifyIndustry(code, name);
+                if (total.signal === 'momentum_buy') { targetPrice = +(currentPrice*1.2).toFixed(2); stopLoss = +(currentPrice*0.93).toFixed(2); }
+                else if (total.signal === 'buy') { const upside = industry.isNewEconomy?0.4:industry.isOldman?0.2:0.3; targetPrice = +(currentPrice*(1+upside)).toFixed(2); stopLoss = +(currentPrice*(industry.isOldman?0.92:0.85)).toFixed(2); }
+                else { stopLoss = +(currentPrice*(industry.isOldman?0.92:0.85)).toFixed(2); }
+              }
+              let positionPct = 5;
+              if (total.signal === 'buy') positionPct = total.total_score >= 75 ? 15 : 10;
+              else if (total.signal === 'momentum_buy') positionPct = 5;
+              else positionPct = 0;
+              results.push({ code, name, trade_date: today, strategy: 'value',
+                quality_score: quality.score, valuation_score: valuation.score,
+                technical_score: technical.score, total_score: total.total_score,
+                signal: total.signal, current_price: currentPrice, target_price: targetPrice, stop_loss: stopLoss, position_pct: positionPct,
+                quality_detail: JSON.stringify({ ...quality.breakdown, industry: quality.industry, isNewEconomy: quality.isNewEconomy, isOldman: quality.isOldman, isDistressed: quality.isDistressed }),
+                quality_latest: null,
+                valuation_detail: JSON.stringify(valuation),
+                technical_detail: JSON.stringify({ signals: technical.signals, rsi14: technical.rsi14 }),
+                reason: JSON.stringify(total.reason),
+                crowding_score: null, crowding_level: null,
+              });
+              scoreCount++;
+            }
+          } catch(e) { console.error(`[score-codes] ${code} error:`, e.message); }
+          processed++;
+        }
+        if (results.length > 0) {
+          const cols = ['code','name','trade_date','strategy','quality_score','valuation_score','technical_score','total_score','signal','current_price','target_price','stop_loss','position_pct','quality_detail','quality_latest','valuation_detail','technical_detail','reason','fund_score','sentiment_score','crowding_score','crowding_level'];
+          const valClauses = results.map((r,i) => '(' + cols.map((_,j) => `$${i*cols.length+j+1}`).join(',') + ')').join(',');
+          const flatVals = [];
+          results.forEach(r => cols.forEach(c => flatVals.push(r[c] ?? null)));
+          const updateSet = cols.filter(c => c !== 'code' && c !== 'trade_date' && c !== 'strategy').map(c => `${c} = EXCLUDED.${c}`).join(', ');
+          await dbRun(`INSERT INTO stock_score (${cols.join(',')}) VALUES ${valClauses}
+            ON CONFLICT (code, trade_date, strategy) DO UPDATE SET ${updateSet}`, flatVals);
+        }
+        result = { step: 'score-codes', processed, scoreCount, remaining: codeList.length - processed, timeElapsed: Date.now() - startTime };
+      }
+    } else if (step === 'score-list') {
+      // 返回当前stock_pool中的所有code（让客户端控制分批）
+      const rows = await dbAll('SELECT code FROM stock_pool WHERE in_pool = 1 ORDER BY code');
+      result = { step: 'score-list', total: rows.length, codes: rows.map(r => r.code) };
+
     } else if (step === 'score-batch') {
       // === 分批评分（解决50秒超时问题）===
       if (stepSyncState.score.codes.length === 0 || stepSyncState.score.done) {
