@@ -882,7 +882,7 @@ app.post('/api/sync/step', async (req, res) => {
         // 同时更新stock_score的pe字段（最新的）
         for (const r of records) {
           if (r.pe != null) {
-            try { await dbRun(`UPDATE stock_score SET pe = $1 WHERE code = $2 AND strategy = 'value' AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = $2 AND strategy='value')`, [r.pe, r.code]); } catch(e) {}
+            try { await dbRun(`UPDATE stock_score SET pe = ? WHERE code = ? AND strategy = 'value' AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = ? AND strategy='value')`, [r.pe, r.code, r.code]); } catch(e) {}
           }
         }
         result = { step: 'valuation-upload', written: records.length, timeElapsed: Date.now() - startTime };
