@@ -1242,6 +1242,68 @@ app.get('/api/db/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ========== 监控健康检查（只读，供定时监控报警） ==========
+app.get('/api/monitor/health', async (req, res) => {
+  try {
+    const db = {
+      pool: (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0,
+      stocks: (await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0,
+      klines: (await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0,
+      indicators: (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0,
+      scores: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0,
+      crowding: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0,
+      finance: (await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0,
+    };
+    const dates = {
+      kline: (await dbGet('SELECT MAX(trade_date) as d FROM daily_kline'))?.d || null,
+      score: (await dbGet('SELECT MAX(trade_date) as d FROM stock_score'))?.d || null,
+      crowding: (await dbGet('SELECT MAX(trade_date) as d FROM crowding_score'))?.d || null,
+    };
+    // 期望最新交易日：周六日→上周五；工作日15点前→昨天；15点后→今天
+    const now = dayjs();
+    const wd = now.day();
+    let expected;
+    if (wd === 0) expected = now.subtract(2, 'day');
+    else if (wd === 6) expected = now.subtract(1, 'day');
+    else if (now.hour() < 15) expected = now.subtract(1, 'day');
+    else expected = now;
+    const expectedDate = expected.format('YYYY-MM-DD');
+    const norm = (d) => d ? String(d).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') : null;
+    const diffDays = (d) => { const n = norm(d); return n ? expected.diff(dayjs(n), 'day') : null; };
+    // 信号分布（按最新评分日期，value 策略）
+    let signals = { buy: 0, watch: 0, hold: 0, sell: 0, momentum_buy: 0, total: 0 };
+    if (dates.score) {
+      const rows = await dbAll(`SELECT signal, COUNT(*) as c FROM stock_score WHERE trade_date = ? AND strategy = 'value' GROUP BY signal`, [dates.score]);
+      const counts = {};
+      for (const r of rows) counts[r.signal] = r.c;
+      signals = {
+        buy: counts.buy || 0, watch: counts.watch || 0, hold: counts.hold || 0,
+        sell: counts.sell || 0, momentum_buy: counts.momentum_buy || 0,
+        total: rows.reduce((a, r) => a + r.c, 0),
+      };
+    }
+    // 同步状态（内存进度，suspend 后可能非 idle）
+    const sync = {
+      kline: stepSyncState.kline.done ? 'idle' : `${stepSyncState.kline.offset}/${stepSyncState.kline.total}`,
+      indicators: stepSyncState.indicators.done ? 'idle' : `${stepSyncState.indicators.offset}/${stepSyncState.indicators.total}`,
+      finance: stepSyncState.finance.done ? 'idle' : `${stepSyncState.finance.offset}/${stepSyncState.finance.total}`,
+    };
+    let version = 'unknown';
+    try { version = fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim(); } catch (e) {}
+    res.json({
+      service: { version, time: new Date().toISOString() },
+      db,
+      freshness: {
+        kline_latest: norm(dates.kline), score_latest: norm(dates.score), crowding_latest: norm(dates.crowding),
+        expected: expectedDate,
+        kline_diff_days: diffDays(dates.kline), score_diff_days: diffDays(dates.score), crowding_diff_days: diffDays(dates.crowding),
+      },
+      signals,
+      sync: { running: Object.values(sync).some(v => v !== 'idle'), ...sync },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 设置接口（数据库持久化）
 const defaultSettings = {
   valWeight: 35, qualWeight: 35, techWeight: 30,

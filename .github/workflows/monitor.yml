@@ -1,0 +1,21 @@
+name: Service Monitor
+
+on:
+  schedule:
+    # 工作日每小时整点（UTC）= 北京时间整点+8；覆盖周一 8:00 ~ 周六 7:00
+    - cron: '0 * * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run health monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_URL: https://cangwei-man-shang.onrender.com
+        run: python3 .github/scripts/monitor.py
