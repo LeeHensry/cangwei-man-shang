@@ -631,11 +631,12 @@ app.post('/api/sync/step', async (req, res) => {
         }
         if (results.length > 0) {
           const cols = ['code','name','trade_date','strategy','quality_score','valuation_score','technical_score','total_score','signal','current_price','target_price','stop_loss','position_pct','quality_detail','quality_latest','valuation_detail','technical_detail','reason','fund_score','sentiment_score','crowding_score','crowding_level'];
-          const valClauses = results.map((r,i) => '(' + cols.map((_,j) => `$${i*cols.length+j+1}`).join(',') + ')').join(',');
+          // 用 ? 占位符让db.js自动转换为$N（与score-batch保持一致）
+          const placeholders = results.map(() => '(' + cols.map(() => '?').join(',') + ')').join(',');
           const flatVals = [];
           results.forEach(r => cols.forEach(c => flatVals.push(r[c] ?? null)));
           const updateSet = cols.filter(c => c !== 'code' && c !== 'trade_date' && c !== 'strategy').map(c => `${c} = EXCLUDED.${c}`).join(', ');
-          await dbRun(`INSERT INTO stock_score (${cols.join(',')}) VALUES ${valClauses}
+          await dbRun(`INSERT INTO stock_score (${cols.join(',')}) VALUES ${placeholders}
             ON CONFLICT (code, trade_date, strategy) DO UPDATE SET ${updateSet}`, flatVals);
         }
         result = { step: 'score-codes', processed, scoreCount, remaining: codeList.length - processed, timeElapsed: Date.now() - startTime };
