@@ -969,6 +969,24 @@ app.post('/api/sync/step', async (req, res) => {
   }
 });
 
+// 清理退市/无效股票：从所有相关表删除指定code
+app.post('/api/cleanup/remove-stocks', async (req, res) => {
+  try {
+    const codes = (req.body?.codes || []).map(c => String(c).replace(/^(sh|sz|bj)/, '')).filter(c => /^\d{6}$/.test(c));
+    if (codes.length === 0) return res.status(400).json({ error: 'codes 必须是非空6位数字数组', given: req.body?.codes });
+    const tables = ['stock_info', 'stock_score', 'stock_universe', 'valuation', 'crowding_score', 'financial_indicator', 'daily_kline', 'technical_indicators'];
+    const summary = {};
+    for (const t of tables) {
+      try {
+        const ph = codes.map((_, i) => `$${i + 1}`).join(',');
+        const r = await dbRun(`DELETE FROM ${t} WHERE code IN (${ph})`, codes);
+        summary[t] = r?.rowCount ?? r?.changes ?? 'ok';
+      } catch (e) { summary[t] = 'ERR:' + e.message.substring(0, 80); }
+    }
+    res.json({ removed: codes, summary, time: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 辅助函数：获取同步状态摘要
 async function getSyncStatus() {
   const poolCount = (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0;
