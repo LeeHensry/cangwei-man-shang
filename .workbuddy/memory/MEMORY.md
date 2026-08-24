@@ -10,7 +10,7 @@
 - **数据库**：Supabase PostgreSQL（东京区 ap-northeast-1），连接用pooler地址(aws-0-ap-northeast-1.pooler.supabase.com:5432, IPv4)，不能用直接连接(db.xxx.supabase.co是IPv6, Render不支持)
 - **代码约定**：数据库股票代码统一为纯6位数字；数据源层(toSinaCode/toTencentCode)自动加前缀；期权模块金额统一USD计价
 - **数据库API**：全部异步（dbGet/dbAll/dbRun/dbBatch/dbExec/dbIsReady），不再使用better-sqlite3同步API
-- **部署约定**：版本号更新和部署必须先经用户确认后再执行；web/dist在.gitignore中，Render通过build脚本自动构建
+- **部署约定（用户2026-08-24明确）**：任何部署前必须先向用户确认「**目标版本号 + 部署内容清单**」（改动文件/功能点），获确认后才执行 push/部署。未经确认不得直接部署；web/dist在.gitignore中，Render通过build脚本自动构建
 - **Render环境变量**：SUPABASE_DB_URL（pooler连接字符串），已删除旧的TURSO_AUTH_TOKEN和TURSO_DATABASE_URL
 - **Render时区坑**：服务器时间为UTC，node-cron表达式必须写UTC时间（北京时间-8小时）。Render免费版进程在无外部请求时会被suspend，setInterval/setTimeout在休眠期间不执行，必须靠外部HTTP请求（如GitHub Actions）保活才能让cron按时触发
 - **保活方案**：GitHub Actions每10分钟curl `/api/version`（.github/workflows/keep-alive.yml）
@@ -33,3 +33,5 @@
 - **财务数据本地上传**：Render上东财datacenter财务API可用性差，用scripts/upload-finance.js本地拉(getFinancialData在src/data/finance.js)→POST /api/sync/step step=finance-upload批量上传
 - **退市股清理**：POST /api/cleanup/remove-stocks {codes:[...]} 从stock_info/stock_score/stock_universe/valuation/crowding_score/financial_indicator/daily_kline/technical_indicators 8张表删除
 - **无PE估值分(v1.7.0)**：无PE时V分上限55、method='price_position_only(no_pe_data)'带warning；无财报Q分默认30。避免垃圾股因股价低位拿V=100
+
+- **监控报警系统(v1.7.7, 2026-08-24, commit d6cd564+cc36b13+d5c701a)**：`GET /api/monitor/health`只读接口(服务/DB规模/新鲜度/信号分布/同步状态)+`.github/scripts/monitor.py`(阈值判断+gh自动创建Issue,标题固定`[监控] 线上健康异常`+open同名去重)+`.github/workflows/monitor.yml`(工作日每小时UTC cron `0 * * * 1-5`,权限issues:write)。新鲜度告警阈值diff>=3自然日,北京时间15:30-18:00同步窗口跳过新鲜度检查。踩坑:①PG的COUNT返回字符串需Number()转换 ②Render服务器UTC,期望交易日必须用`dayjs().add(8,'hour')`算北京时间 ③本机python3缺CA证书,本地测线上https需SSL_CERT_FILE=/etc/ssl/cert.pem
