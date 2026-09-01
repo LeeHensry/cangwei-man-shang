@@ -100,17 +100,6 @@ export default function Signals() {
     { title: '信号', dataIndex: 'signal', width: 90, align: 'center', fixed: 'right',
       render: s => <span className={'signal-badge signal-'+s}>{signalMeta[s]?.label}</span>
     },
-    { title: '拥挤度', dataIndex: 'crowding_score', width: 70, align: 'center', sorter: true,
-      render: (v, r) => {
-        if (v === null || v === undefined) return <Text type="secondary" style={{fontSize:12}}>-</Text>;
-        const color = v >= 85 ? 'var(--up)' : v >= 70 ? 'var(--up)' : v >= 55 ? 'var(--warn)' : v >= 30 ? 'var(--purple)' : 'var(--down)';
-        return (
-          <Tooltip title={`拥挤度等级: ${r.crowding_level || 'normal'}`}>
-            <span style={{color, fontWeight:700, fontSize:12, fontFamily:'var(--font-mono)'}}>{Math.round(v)}</span>
-          </Tooltip>
-        );
-      }
-    },
   ];
 
   return (

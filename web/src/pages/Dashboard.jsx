@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   ReloadOutlined, FireOutlined, RiseOutlined, InfoCircleOutlined, ArrowUpOutlined, ArrowDownOutlined,
-  FundViewOutlined, WarningOutlined, RocketOutlined, CheckCircleOutlined, FallOutlined,
+  FundViewOutlined, CheckCircleOutlined, FallOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
@@ -19,14 +19,6 @@ const signalMeta = {
   hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)', icon: '' },
   sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)', icon: '' },
   momentum_buy: { label: '动量搭车', color: 'var(--purple)', bg: 'var(--purple-soft)', icon: '' },
-};
-
-const crowdingLevelMeta = {
-  extreme: { label: '极端危险', color: 'var(--up)' },
-  crowded: { label: '拥挤预警', color: 'var(--up)' },
-  hot: { label: '火热', color: 'var(--warn)' },
-  warm: { label: '动量搭车', color: 'var(--purple)' },
-  cold: { label: '冷清', color: 'var(--down)' },
 };
 
 function IndexCard({ item }) {
@@ -197,70 +189,6 @@ export default function Dashboard() {
           {syncing ? '同步中' : '刷新数据'}
         </Button>
       </div>
-
-      {/* 拥挤度预警卡片 */}
-      {data.crowding && (data.crowding.stock_warnings?.length > 0 || data.crowding.momentum_candidates?.length > 0) && (
-        <Row gutter={[10,10]} style={{ marginBottom: 12 }}>
-          {data.crowding.stock_warnings?.length > 0 && (
-            <Col xs={24} md={data.crowding.momentum_candidates?.length > 0 ? 12 : 24}>
-              <Card
-                size="small"
-                title={
-                  <Space size={6}>
-                    <WarningOutlined style={{color:'var(--up)'}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:'var(--up)'}}>拥挤度预警</span>
-                    <Tag color="red" style={{margin:0}}>{data.crowding.stock_warnings.length}只</Tag>
-                  </Space>
-                }
-                extra={<a onClick={() => navigate('/crowding')} style={{fontSize:12}}>详情 →</a>}
-                style={{borderColor:'var(--up)'}}
-                bodyStyle={{padding:'8px 12px',maxHeight:120,overflowY:'auto'}}
-              >
-                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                  {data.crowding.stock_warnings.slice(0,12).map(s => (
-                    <Tag
-                      key={s.code}
-                      onClick={() => navigate('/stock/'+s.code)}
-                      style={{cursor:'pointer',background:'var(--up-soft)',borderColor:'#ffccc7',color:'#cf1322',fontSize:11,margin:0}}
-                    >
-                      {s.name} <span style={{opacity:0.7}}>{s.combined_crowding_score}°</span>
-                      {s.ret_5d > 10 && <FireOutlined style={{marginLeft:2}}/>}
-                    </Tag>
-                  ))}
-                </div>
-              </Card>
-            </Col>
-          )}
-          {data.crowding.momentum_candidates?.length > 0 && (
-            <Col xs={24} md={data.crowding.stock_warnings?.length > 0 ? 12 : 24}>
-              <Card
-                size="small"
-                title={
-                  <Space size={6}>
-                    <RocketOutlined style={{color:'var(--purple)'}}/>
-                    <span style={{fontSize:12,fontWeight:600,color:'var(--purple)'}}>动量搭车</span>
-                    <Tag color="purple" style={{margin:0}}>{data.crowding.momentum_candidates.length}只</Tag>
-                  </Space>
-                }
-                extra={<a onClick={() => navigate('/crowding')} style={{fontSize:12}}>详情 →</a>}
-                bodyStyle={{padding:'8px 12px',maxHeight:120,overflowY:'auto'}}
-              >
-                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                  {data.crowding.momentum_candidates.slice(0,12).map(s => (
-                    <Tag
-                      key={s.code}
-                      onClick={() => navigate('/stock/'+s.code)}
-                      style={{cursor:'pointer',background:'var(--purple-soft)',borderColor:'#e9d5ff',color:'#7e22ce',fontSize:11,margin:0}}
-                    >
-                      {s.name} <span style={{opacity:0.7}}>{s.total_score}分</span>
-                    </Tag>
-                  ))}
-                </div>
-              </Card>
-            </Col>
-          )}
-        </Row>
-      )}
 
       {/* 指数一行 */}
       <Row gutter={[8,8]} style={{ marginBottom: 12 }}>

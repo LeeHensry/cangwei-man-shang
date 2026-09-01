@@ -31,7 +31,6 @@ const emKline = require('./src/data/eastmoney');
 const { calcAllIndicators } = require('./src/factors/indicators');
 const { scoreAllStocks, classifyIndustry, syncFinancialData, calcQualityScore, calcValuationScore, calcTechnicalScore, calcTotalScore } = require('./src/strategies/value_score');
 const { getMarketOverview, calcMarketConcentration } = require('./src/data/money_flow');
-const { calcAllCrowding, getCrowdingSignal } = require('./src/factors/crowding');
 const dayjs = require('dayjs');
 
 const app = express();
@@ -81,18 +80,10 @@ app.get('/api/market/overview', async (req, res) => {
       { label: '趋势', score: trendScore, weight: '20%', detail: `均线位置`, color: '#f79009' },
       { label: '情绪', score: sentimentScore, weight: '15%', detail: `均涨${avgIdxPct?.toFixed(1)||0}% ${upIndices}涨`, color: '#9e77ed' },
     ];
-    const signalCounts = { buy: 0, watch: 0, hold: 0, sell: 0, momentum_buy: 0 };
+    const signalCounts = { buy: 0, watch: 0, hold: 0, sell: 0 };
     scores.forEach(s => { if (signalCounts[s.signal] !== undefined) signalCounts[s.signal]++; });
     const today = dayjs().format('YYYYMMDD');
-    const sectorCrowdingRows = await dbAll(`SELECT * FROM sector_crowding WHERE trade_date = ? ORDER BY crowding_score DESC`, [today]);
-    const crowdedSectors = sectorCrowdingRows.filter(s => s.crowding_score >= 75);
-    const coldSectors = sectorCrowdingRows.filter(s => s.crowding_score < 35);
-    const momentumSectors = sectorCrowdingRows.filter(s => s.crowding_score >= 35 && s.crowding_score < 65);
-    const stockWarningRows = await dbAll(`SELECT c.code, c.name, c.combined_crowding_score, c.level, c.action, c.factors_json, s.signal, s.total_score FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND (c.level = 'extreme' OR c.level = 'crowded') ORDER BY c.combined_crowding_score DESC LIMIT 15`, [today]);
-    const stockWarnings = stockWarningRows.map(r => { let factors = {}; try { factors = JSON.parse(r.factors_json); } catch(e) {} return { ...r, ret_5d: factors.ret_5d, ret_20d: factors.ret_20d, reasons: factors.reasons || [] }; });
-    const momentumCandidateRows = await dbAll(`SELECT c.code, c.name, c.combined_crowding_score, s.total_score, s.technical_score, c.factors_json, i.industry FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' LEFT JOIN stock_info i ON c.code = i.code WHERE c.trade_date = ? AND c.action = 'momentum_buy' AND s.total_score >= 45 ORDER BY s.total_score DESC LIMIT 10`, [today]);
-    const momentumCandidates = momentumCandidateRows.map(r => { let factors = {}; try { factors = JSON.parse(r.factors_json); } catch(e) {} return { ...r, ret_5d: factors.ret_5d, ret_20d: factors.ret_20d, momentum_state: factors.momentum_state }; });
-    const topCandidates = scores.filter(s => s.signal === 'buy' || s.signal === 'watch' || s.signal === 'momentum_buy').sort((a,b) => b.total_score - a.total_score).slice(0, 10);
+    const topCandidates = scores.filter(s => s.signal === 'buy' || s.signal === 'watch').sort((a,b) => b.total_score - a.total_score).slice(0, 10);
     const topStocks = [];
     for (const s of topCandidates) {
       const val = await dbGet('SELECT pe, trade_date FROM valuation WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [s.code]);
@@ -106,7 +97,6 @@ app.get('/api/market/overview', async (req, res) => {
       indices: indices.map(i => ({ name: i.name, code: i.code, close: i.close, pct_chg: i.pct_chg })),
       temperature: { value: temp, label: tempDesc, suggested_position: suggestedPos, median_pe: +medianPE.toFixed(1), color: tempColor, breakdown: tempBreakdown, total_amount: totalAmount, concentration: conc, top_flow_sectors: concentration.top_sectors, worst_flow_sectors: concentration.worst_sectors },
       signal_counts: signalCounts, top_stocks: topStocks, sectors: sectors.slice(0, 10), total_stocks: scores.length,
-      crowding: { sector_crowding: sectorCrowdingRows.slice(0, 20), crowded_sectors: crowdedSectors, cold_sectors: coldSectors.slice(0, 8), momentum_sectors: momentumSectors.slice(0, 8), stock_warnings: stockWarnings, momentum_candidates: momentumCandidates, market_avg_crowding: sectorCrowdingRows.length > 0 ? Math.round(sectorCrowdingRows.reduce((a,b)=>a+b.crowding_score,0)/sectorCrowdingRows.length) : 50 },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -120,10 +110,13 @@ app.get('/api/stocks', async (req, res) => {
     const params = [latestDate];
     if (signal) { where += ` AND s.signal = ?`; params.push(signal); }
     if (minScore) { where += ` AND s.total_score >= ?`; params.push(parseInt(minScore)); }
-    const latestKlineDateRow = await dbGet('SELECT MAX(trade_date) as d FROM daily_kline');
-    const latestKlineDate = latestKlineDateRow?.d;
-    let rows = await dbAll(`SELECT s.*, i.name, i.total_mv, v.pe, k.close as current_price, k.pct_chg as daily_pct_chg FROM stock_score s LEFT JOIN stock_info i ON s.code = i.code LEFT JOIN valuation v ON s.code = v.code AND v.trade_date = (SELECT MAX(trade_date) FROM valuation WHERE code = s.code) LEFT JOIN daily_kline k ON k.code = s.code AND k.trade_date = (SELECT MAX(trade_date) FROM daily_kline WHERE code = s.code) ${where}`, [...params]);
-    rows = rows.map(r => { let ind = null; try { ind = JSON.parse(r.quality_detail); } catch(e) {} return { ...r, _industry: ind?.industry, _isNewEconomy: ind?.isNewEconomy, _isOldman: ind?.isOldman }; });
+    let rows = await dbAll(`SELECT s.*, COALESCE(s.name,i.name) as _name, COALESCE(s.mktcap_yi, i.total_mv) as total_mv, COALESCE(s.pe, v.pe) as pe, COALESCE(s.pb, v.pb) as pb, COALESCE(s.current_price, k.close) as current_price, k.pct_chg as daily_pct_chg FROM stock_score s LEFT JOIN stock_info i ON s.code = i.code LEFT JOIN valuation v ON v.code = s.code AND v.trade_date = (SELECT MAX(trade_date) FROM valuation WHERE code = s.code) LEFT JOIN daily_kline k ON k.code = s.code AND k.trade_date = (SELECT MAX(trade_date) FROM daily_kline WHERE code = s.code) ${where}`, [...params]);
+    rows = rows.map(r => {
+      let ind = r.sw_l1 || r.industry || null;
+      let isNE = null, isOM = null;
+      if (!ind && r.quality_detail) { try { const qd = JSON.parse(r.quality_detail); ind = qd.industry; isNE = qd.isNewEconomy; isOM = qd.isOldman; } catch(e) {} }
+      return { ...r, name: r._name || r.name, _industry: ind, _isNewEconomy: isNE, _isOldman: isOM };
+    });
     if (industry && industry !== 'all') rows = rows.filter(r => r._industry && r._industry.includes(industry));
     if (isNewEconomy === 'true') rows = rows.filter(r => r._isNewEconomy);
     if (isOldman === 'true') rows = rows.filter(r => r._isOldman);
@@ -289,20 +282,23 @@ app.post('/api/sync', async (req, res) => {
         emitProgress('indicator', `技术指标计算完成：${indCount} 支`, indStartPct + 12);
         result.indCount = indCount;
 
-        emitProgress('score', '计算多因子评分（含财务数据补全）...', 80);
-        await scoreAllStocks(true, true, currentSettings);
-        emitProgress('score', '评分完成', 87);
-        emitProgress('short', '计算短线信号...', 88);
-        try { await calcAllShortSignals(); } catch(e) { console.log('short signals error:', e.message); }
-        emitProgress('short', '短线信号计算完成', 91);
-        emitProgress('crowding', '计算拥挤度...', 92);
-        try { await calcAllCrowding(); } catch(e) { console.log('crowding error:', e.message); }
-        emitProgress('crowding', '拥挤度计算完成', 96);
+        emitProgress('score', '计算多因子评分...', 80);
+        if (!process.env.DISABLE_LEGACY_SCORING) {
+          await scoreAllStocks(true, currentSettings);
+        } else {
+          console.log('[sync] DISABLE_LEGACY_SCORING=true，跳过旧引擎全量评分');
+        }
+        emitProgress('score', '评分步骤完成', 87);
         try { emitProgress('pool', '更新关注池...', 97); await stockPool.updateStockPool(200); } catch(e) { console.log('pool update error:', e.message); }
       } else {
-        emitProgress('score', '增量同步：快速评分中...', 60);
-        await scoreAllStocks(false, false, currentSettings);
-        emitProgress('score', '评分完成', 95);
+        // 增量模式：若禁用了旧打分引擎，则跳过本地评分（由外部 upload 灌入新打分）
+        if (!process.env.DISABLE_LEGACY_SCORING) {
+          emitProgress('score', '增量同步：快速评分中...', 60);
+          await scoreAllStocks(false, currentSettings);
+          emitProgress('score', '评分完成', 95);
+        } else {
+          emitProgress('score', 'DISABLE_LEGACY_SCORING=true，跳过本地旧引擎评分（等待外部新打分上传）', 95);
+        }
       }
 
       emitProgress('done', `同步完成！${quotes.length}支行情 / ${klineCount}条K线${syncMode === 'full' ? ' / 全量指标评分' : '（增量快速模式）'}${klineErrors > 0 ? `（${klineErrors}个K线拉取失败）` : ''}`, 100);
@@ -342,7 +338,6 @@ let stepSyncState = {
   indicators: { offset: 0, total: 0, codes: [], done: false },
   finance: { offset: 0, total: 0, codes: [], done: false },
   score: { offset: 0, total: 0, codes: [], done: false },
-  crowding: { offset: 0, total: 0, codes: [], done: false },
 };
 
 function getTimeLeft(startTime) {
@@ -580,11 +575,9 @@ app.post('/api/sync/step', async (req, res) => {
       // === 评分（含财务数据补全）===
       // 评分本身是一步完成，但可以限制只处理部分股票
       const fullScore = req.body?.full !== false;
-      await scoreAllStocks(fullScore, fullScore, userSettings);
+      await scoreAllStocks(fullScore, userSettings);
       result = { step: 'score', done: true, timeElapsed: Date.now() - startTime };
 
-      // 评分后顺便算短线信号
-      try { await calcAllShortSignals(); } catch(e) { console.log('[step:score] 短线信号失败:', e.message); }
 
     } else if (step === 'score-codes') {
       // === 指定股票列表评分（客户端控制进度，不依赖服务器内存state）===
@@ -732,86 +725,6 @@ app.post('/api/sync/step', async (req, res) => {
       };
       if (state.done) {
         stepSyncState.score = { offset: 0, total: 0, codes: [], done: false };
-        // 评分完成后算短线信号
-        try { await calcAllShortSignals(); } catch(e) {}
-      }
-
-    } else if (step === 'crowding') {
-      // === 拥挤度计算 ===
-      await calcAllCrowding();
-      result = { step: 'crowding', done: true, timeElapsed: Date.now() - startTime };
-
-    } else if (step === 'crowding-batch') {
-      // === 分批拥挤度计算 ===
-      if (!stepSyncState.crowding || stepSyncState.crowding.done || stepSyncState.crowding.codes.length === 0) {
-        const allCodeRows = await dbAll('SELECT code, name FROM stock_info WHERE is_st = 0');
-        stepSyncState.crowding = { offset: 0, total: allCodeRows.length, codes: allCodeRows, done: false, sectorCache: {} };
-      }
-      const state = stepSyncState.crowding;
-      const today = dayjs().format('YYYYMMDD');
-      let processed = 0, crowdCount = 0;
-      const results = [];
-
-      while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
-        const { code, name } = state.codes[state.offset];
-        try {
-          const signal = await getCrowdingSignal(code);
-          if (signal) {
-            results.push({
-              code, name, trade_date: today,
-              stock_crowding_score: signal.stock_crowding,
-              sector_crowding_score: signal.sector_crowding,
-              combined_crowding_score: signal.combined_score,
-              level: signal.level,
-              action: signal.action,
-              momentum_bonus: signal.momentum_bonus,
-              crowding_penalty: signal.crowding_penalty,
-              factors_json: JSON.stringify({
-                ret_5d: signal.factors.stock.ret_5d,
-                ret_20d: signal.factors.stock.ret_20d,
-                momentum_state: signal.factors.stock.momentum_accel?.state,
-                momentum_ratio: signal.factors.stock.momentum_accel?.ratio,
-                turnover_pct: signal.factors.stock.turnover_percentile?.percentile,
-                divergence: signal.factors.stock.volume_divergence?.divergence,
-                up_days: signal.factors.stock.consecutive_days?.up_days,
-                sector_up_ratio: signal.factors.sector.up_ratio,
-                leader_lag: signal.factors.sector.leader_lag,
-                reasons: signal.reasons,
-              }),
-            });
-            crowdCount++;
-          }
-        } catch(e) { console.error(`  [crowding-batch] ${code} error:`, e.message); }
-        state.offset++;
-        processed++;
-      }
-
-      // 批量写入
-      if (results.length > 0) {
-        const cols = ['code','name','trade_date','stock_crowding_score','sector_crowding_score','combined_crowding_score','level','action','momentum_bonus','crowding_penalty','factors_json'];
-        const valuesStr = results.map(r =>
-          `('${r.code}','${(r.name||'').replace(/'/g,"''")}','${r.trade_date}',${r.stock_crowding_score ?? 'NULL'},${r.sector_crowding_score ?? 'NULL'},${r.combined_crowding_score ?? 'NULL'},'${r.level || ''}','${r.action || ''}',${r.momentum_bonus ?? 'NULL'},${r.crowding_penalty ?? 'NULL'},'${(r.factors_json||'').replace(/'/g,"''")}')`
-        ).join(',');
-        await dbRun(`INSERT INTO crowding_score (${cols.join(',')}) VALUES ${valuesStr} ON CONFLICT (code,trade_date) DO UPDATE SET stock_crowding_score=EXCLUDED.stock_crowding_score,sector_crowding_score=EXCLUDED.sector_crowding_score,combined_crowding_score=EXCLUDED.combined_crowding_score,level=EXCLUDED.level,action=EXCLUDED.action,momentum_bonus=EXCLUDED.momentum_bonus,crowding_penalty=EXCLUDED.crowding_penalty,factors_json=EXCLUDED.factors_json`);
-
-        // 回写crowding_score到stock_score
-        for (const r of results) {
-          try {
-            await dbRun(`UPDATE stock_score SET crowding_score = ?, crowding_level = ? WHERE code = ? AND trade_date = (SELECT MAX(trade_date) FROM stock_score WHERE code = ?)`, [r.combined_crowding_score, r.level, r.code, r.code]);
-          } catch(e) {}
-        }
-      }
-
-      state.done = state.offset >= state.total;
-      result = {
-        step: 'crowding-batch', processed, crowdCount,
-        progress: `${state.offset}/${state.total}`,
-        progressPct: Math.round(state.offset / state.total * 100),
-        done: state.done,
-        timeElapsed: Date.now() - startTime,
-      };
-      if (state.done) {
-        stepSyncState.crowding = { offset: 0, total: 0, codes: [], done: false };
       }
 
     } else if (step === 'finance') {
@@ -945,17 +858,15 @@ app.post('/api/sync/step', async (req, res) => {
         nextStep = 'finance';
         const r = await runStepFinance(startTime, batchSize * 2);
         stepResult = r;
-      } else if (status.scores < status.pool) {
+      } else if (status.scores < status.pool && process.env.DISABLE_AUTO_SCORE !== 'true') {
         // 评分不够→评分
         nextStep = 'score';
-        await scoreAllStocks(false, false, userSettings);
-        try { await calcAllShortSignals(); } catch(e) {}
+        await scoreAllStocks(false, userSettings);
         stepResult = { subStep: 'score', done: true };
-      } else if (status.crowding < status.pool * 0.5) {
-        // 拥挤度不够→算拥挤度
-        nextStep = 'crowding';
-        await calcAllCrowding();
-        stepResult = { subStep: 'crowding', done: true };
+      } else if (status.scores < status.pool) {
+        // 线上评分已关闭（新打分由本地 Phase1.5 引擎经 /api/scores/upload 上传）
+        nextStep = null;
+        stepResult = { subStep: 'score-disabled', done: true, note: '线上评分已关闭，等待本地上传' };
       } else {
         // 全部完成
         nextStep = null;
@@ -1160,32 +1071,6 @@ async function runStepFinance(startTime, batchSize) {
   return r;
 }
 
-// ========== 短线策略 API ==========
-const { calcShortSignal, calcAllShortSignals, getShortOpportunities } = require('./src/strategies/short_term');
-
-app.get('/api/short/opportunities', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 30;
-    const signal = req.query.signal || '';
-    const minScore = parseInt(req.query.minScore) || 60;
-    let opps = await getShortOpportunities({ limit, signal, minScore });
-    if (opps.length === 0) { try { await calcAllShortSignals(); opps = await getShortOpportunities({ limit, signal, minScore }); } catch(e) {} }
-    res.json({ date: dayjs().format('YYYY-MM-DD'), count: opps.length, data: opps });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/short/calc', (req, res) => {
-  res.json({ status: 'started' });
-  setTimeout(async () => { try { await calcAllShortSignals(); } catch(e) { console.error('短线计算失败:', e.message); } }, 100);
-});
-
-app.get('/api/short/stock/:code', async (req, res) => {
-  try {
-    const sig = await calcShortSignal(req.params.code);
-    res.json(sig || { signal: 'nodata' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 // ========== 加密货币 API ==========
 const binance = require('./src/data/binance');
 
@@ -1220,16 +1105,6 @@ app.get('/api/crypto/ticker/:symbol', async (req, res) => {
   } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// ========== 回测 API ==========
-const { runBacktest } = require('./src/strategies/backtest');
-
-app.post('/api/backtest/run', async (req, res) => {
-  try {
-    const result = await runBacktest(req.body || {});
-    res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 // 数据库统计
 app.get('/api/db/stats', async (req, res) => {
   try {
@@ -1251,13 +1126,11 @@ app.get('/api/monitor/health', async (req, res) => {
       klines: Number((await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0),
       indicators: Number((await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0),
       scores: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0),
-      crowding: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0),
       finance: Number((await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0),
     };
     const dates = {
       kline: (await dbGet('SELECT MAX(trade_date) as d FROM daily_kline'))?.d || null,
       score: (await dbGet('SELECT MAX(trade_date) as d FROM stock_score'))?.d || null,
-      crowding: (await dbGet('SELECT MAX(trade_date) as d FROM crowding_score'))?.d || null,
     };
     // 期望最新交易日（按北京时间，Render 服务器为 UTC）：周六日→上周五；工作日15点前→昨天；15点后→今天
     const bj = dayjs().add(8, 'hour');
@@ -1341,7 +1214,7 @@ app.post('/api/settings', async (req, res) => {
   setTimeout(async () => {
     try {
       console.log('[settings] 设置已变更，重新计算评分...');
-      await scoreAllStocks(true, true, userSettings);
+      await scoreAllStocks(true, userSettings);
       try { await calcAllCrowding(); } catch(e) {}
       try { await calcAllShortSignals(); } catch(e) {}
       console.log('[settings] 重新评分完成');
@@ -1551,6 +1424,127 @@ app.post('/api/universe/reset', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ========== Phase1.5 新打分上传 ==========
+// 接收本地打分引擎产出的七维分（V/Q/G/F/T/M/L）+ 评级，upsert 到 stock_score。
+// 字段映射：V→valuation_score  Q→quality_score  T→technical_score  M→fund_score
+//           G/F/L→各自新列      rating→signal（buy/watch/hold/sell 与前端一致）
+// 目的：旧版 value_score 引擎下线后，前端无需改造即可展示新打分。
+app.post('/api/scores/upload', async (req, res) => {
+  try {
+    const { trade_date, rows, strategy: strategyIn } = req.body || {};
+    if (!trade_date) return res.status(400).json({ error: '缺少 trade_date' });
+    if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows 数组为空' });
+
+    // 同时写入 'phase15'（新打分标识）和 'value'（兼容旧前端查询）两个strategy
+    const strategies = ['phase15', 'value'];
+    const useStrategy = strategyIn && !strategies.includes(strategyIn) ? [strategyIn, 'value'] : strategies;
+
+    const COLS = ['code','trade_date','strategy','name','industry','sw_l1',
+      'quality_score','valuation_score','technical_score','fund_score','sentiment_score',
+      'score_G','score_F','score_L','total_score','signal','rank_num','market_pct',
+      'current_price','pe','pb','mktcap_yi','np_mom','volatility_20d','ret_20d','ret_60d'];
+    const PH = COLS.map(() => '?').join(',');
+
+    const stmts = [];
+    const infoStmts = [];
+    const valStmts = [];
+    const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    for (const r of rows) {
+      for (const strat of useStrategy) {
+        stmts.push({
+          sql: `INSERT OR REPLACE INTO stock_score (${COLS.join(',')}) VALUES (${PH})`,
+          args: [
+            String(r.code), String(trade_date), strat, r.name ?? null, r.sw_l1 ?? null, r.sw_l1 ?? null,
+            r.score_Q ?? null, r.score_V ?? null, r.score_T ?? null, r.score_M ?? null, null,
+            r.score_G ?? null, r.score_F ?? null, r.score_L ?? null, r.total_score ?? null,
+            (r.rating ?? 'hold').toLowerCase(), r.rank ?? null, r.market_pct ?? null,
+            r.price ?? null, r.pe ?? null, r.pb ?? null, r.mktcap_yi ?? null, r.np_mom ?? null,
+            r.volatility_20d ?? null, r.ret_20d ?? null, r.ret_60d ?? null,
+          ],
+        });
+      }
+      // 同步更新 stock_info（name/market/total_mv），保证 /api/stocks 关联查询有数据
+      if (r.name && r.mktcap_yi != null) {
+        const market = r.code.startsWith('6') || r.code.startsWith('9') ? 'SH' : 'SZ';
+        infoStmts.push({
+          sql: `INSERT OR REPLACE INTO stock_info (code,name,market,total_mv,circ_mv,updated_at,is_st) VALUES (?,?,?,?,?,?,?)`,
+          args: [String(r.code), r.name, market, r.mktcap_yi, r.mktcap_yi, nowStr, (r.name && r.name.includes('ST')) ? 1 : 0],
+        });
+      }
+      // 同步更新 valuation（pe）
+      if (r.pe != null) {
+        valStmts.push({
+          sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe,pb,total_mv) VALUES (?,?,?,?,?)`,
+          args: [String(r.code), String(trade_date), r.pe ?? null, r.pb ?? null, r.mktcap_yi ?? null],
+        });
+      }
+    }
+
+    let written = 0;
+    for (let i = 0; i < stmts.length; i += 200) {
+      await dbBatch(stmts.slice(i, i + 200));
+      written += Math.min(200, stmts.length - i);
+    }
+    if (infoStmts.length > 0) {
+      for (let i = 0; i < infoStmts.length; i += 200) await dbBatch(infoStmts.slice(i, i + 200));
+    }
+    if (valStmts.length > 0) {
+      for (let i = 0; i < valStmts.length; i += 200) await dbBatch(valStmts.slice(i, i + 200));
+    }
+    res.json({ ok: true, trade_date, strategy: useStrategy, written: rows.length, score_rows: stmts.length });
+  } catch (e) {
+    console.error('scores/upload error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== 清库（危险操作，仅限管理员） ==========
+// body: { secret, tables: ['stock_score', ...], dry_run: true }
+// 白名单表 + ADMIN_SECRET 校验；dry_run 只返回行数不执行删除。
+const RESETTABLES = [
+  'stock_score', 'daily_kline', 'technical_indicators', 'financial_indicator',
+  'valuation', 'fund_flow', 'sector_daily', 'north_hold', 'news_sentiment',
+  'stock_universe', 'stock_pool', 'sync_log', 'stock_info',
+];
+
+app.post('/api/admin/reset-data', async (req, res) => {
+  try {
+    const { secret, tables = [], dry_run = true } = req.body || {};
+    const expected = process.env.ADMIN_SECRET;
+    if (!expected) return res.status(503).json({ error: '服务端未配置 ADMIN_SECRET，接口已禁用' });
+    if (secret !== expected) return res.status(403).json({ error: 'secret 不正确' });
+    if (!Array.isArray(tables) || tables.length === 0) return res.status(400).json({ error: 'tables 为空' });
+
+    const invalid = tables.filter(t => !RESETTABLES.includes(t));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `不允许的表: ${invalid.join(', ')}`, allowed: RESETTABLES });
+    }
+
+    const counts = {};
+    for (const t of tables) {
+      const row = await dbGet(`SELECT COUNT(*) as c FROM ${t}`);
+      counts[t] = Number(row?.c || 0);
+    }
+
+    if (dry_run) {
+      return res.json({ ok: true, dry_run: true, would_delete: counts,
+        total: Object.values(counts).reduce((a, b) => a + b, 0) });
+    }
+
+    const deleted = {};
+    for (const t of tables) {
+      await dbRun(`DELETE FROM ${t}`);
+      deleted[t] = counts[t];
+    }
+    console.log(`[admin] 清库执行: ${JSON.stringify(deleted)}`);
+    res.json({ ok: true, dry_run: false, deleted,
+      total: Object.values(deleted).reduce((a, b) => a + b, 0) });
+  } catch (e) {
+    console.error('admin/reset-data error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/stock-pool/add', async (req, res) => {
   try {
     const { code, name } = req.body;
@@ -1578,47 +1572,6 @@ app.get('/api/news', (req, res) => {
     ],
   };
   res.json({ items: mockNews[type] || [] });
-});
-
-// ========== 拥挤度雷达 API ==========
-app.get('/api/crowding/overview', async (req, res) => {
-  try {
-    const today = dayjs().format('YYYYMMDD');
-    const latestDateRow = await dbGet('SELECT MAX(trade_date) as d FROM crowding_score');
-    const latestDate = latestDateRow?.d || today;
-    const sectors = await dbAll(`SELECT * FROM sector_crowding WHERE trade_date = ? ORDER BY crowding_score DESC`, [latestDate]);
-    const levels = { extreme: [], crowded: [], hot: [], warm: [], cold: [] };
-    sectors.forEach(s => { if (levels[s.level]) levels[s.level].push(s); });
-    const exitStocks = await dbAll(`SELECT c.*, s.total_score, s.signal as score_signal, (SELECT close FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as current_price, (SELECT pct_chg FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as pct_chg FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.action = 'exit' ORDER BY c.combined_crowding_score DESC`, [latestDate]);
-    const trimStocks = await dbAll(`SELECT c.*, s.total_score, s.signal as score_signal, (SELECT close FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as current_price, (SELECT pct_chg FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as pct_chg FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.action = 'trim' ORDER BY c.combined_crowding_score DESC`, [latestDate]);
-    const momentumStocks = await dbAll(`SELECT c.*, s.total_score, s.technical_score, s.quality_score, (SELECT close FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as current_price, (SELECT pct_chg FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as pct_chg FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.action = 'momentum_buy' AND (s.technical_score >= 50 OR s.technical_score IS NULL) AND s.total_score >= 45 ORDER BY s.total_score DESC`, [latestDate]);
-    const coldStocks = await dbAll(`SELECT c.*, s.total_score, s.quality_score, s.valuation_score, (SELECT close FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as current_price, (SELECT pct_chg FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as pct_chg FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.level = 'cold' AND s.quality_score >= 60 AND s.valuation_score >= 55 ORDER BY s.total_score DESC LIMIT 20`, [latestDate]);
-    const parseFactors = (list) => list.map(r => { let factors = {}; try { factors = JSON.parse(r.factors_json); } catch(e) {} return { ...r, factors }; });
-    const avgCrowding = sectors.length > 0 ? Math.round(sectors.reduce((a,b)=>a+b.crowding_score,0)/sectors.length) : 50;
-    res.json({
-      date: latestDate, market_avg_crowding: avgCrowding,
-      market_crowding_level: avgCrowding >= 80 ? 'extreme' : avgCrowding >= 65 ? 'crowded' : avgCrowding >= 45 ? 'hot' : avgCrowding >= 25 ? 'warm' : 'cold',
-      sector_levels: { extreme: levels.extreme.length, crowded: levels.crowded.length, hot: levels.hot.length, warm: levels.warm.length, cold: levels.cold.length },
-      all_sectors: sectors.map(s => ({ ...s, change_pct: null })),
-      exit_signals: parseFactors(exitStocks), trim_signals: parseFactors(trimStocks),
-      momentum_candidates: parseFactors(momentumStocks), cold_opportunities: parseFactors(coldStocks),
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/crowding/stock/:code', async (req, res) => {
-  try {
-    const { code } = req.params;
-    const signal = await getCrowdingSignal(code);
-    if (!signal) return res.status(404).json({ error: '股票不存在' });
-    const history = await dbAll(`SELECT trade_date, combined_crowding_score, level, action FROM crowding_score WHERE code = ? ORDER BY trade_date DESC LIMIT 20`, [code]);
-    res.json({ ...signal, history: history.reverse() });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/crowding/calc', (req, res) => {
-  res.json({ status: 'started', message: '拥挤度计算已开始' });
-  setTimeout(async () => { try { await calcAllCrowding(); console.log('[' + dayjs().format('YYYY-MM-DD HH:mm') + '] 拥挤度计算完成'); } catch(e) { console.error('拥挤度计算失败:', e.message); } }, 100);
 });
 
 // ========== 持仓管理 API ==========
@@ -1667,33 +1620,6 @@ app.get('/api/portfolio/closed', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== 服务端渲染的拥挤度页面 ==========
-app.get('/crowding-radar', async (req, res) => {
-  try {
-    const today = dayjs().format('YYYYMMDD');
-    const latestDateRow = await dbGet('SELECT MAX(trade_date) as d FROM crowding_score');
-    const latestDate = latestDateRow?.d || today;
-    const sectors = await dbAll(`SELECT * FROM sector_crowding WHERE trade_date = ? ORDER BY crowding_score DESC`, [latestDate]);
-    const exitStocks = await dbAll(`SELECT c.*, s.total_score, s.signal as score_signal, (SELECT close FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as current_price, (SELECT pct_chg FROM daily_kline WHERE code=c.code ORDER BY trade_date DESC LIMIT 1) as pct_chg FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.action IN ('exit','trim') ORDER BY c.combined_crowding_score DESC`, [latestDate]);
-    const momentumStocks = await dbAll(`SELECT c.*, s.total_score, s.technical_score, s.quality_score FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.action = 'momentum_buy' AND s.total_score >= 45 ORDER BY s.total_score DESC LIMIT 20`, [latestDate]);
-    const coldStocks = await dbAll(`SELECT c.*, s.total_score, s.quality_score, s.valuation_score FROM crowding_score c LEFT JOIN stock_score s ON c.code = s.code AND s.trade_date = c.trade_date AND s.strategy = 'value' WHERE c.trade_date = ? AND c.level = 'cold' AND s.quality_score >= 60 ORDER BY s.total_score DESC LIMIT 15`, [latestDate]);
-    const parseFactors = (r) => { try { return JSON.parse(r.factors_json); } catch(e) { return {}; } };
-    const avgCrowding = sectors.length > 0 ? Math.round(sectors.reduce((a,b)=>a+b.crowding_score,0)/sectors.length) : 50;
-    const levelColor = { extreme:'#d92d20', crowded:'#f04438', hot:'#f79009', warm:'#9e77ed', cold:'#12b76a' };
-    const levelLabel = { extreme:'🚨极端危险', crowded:'⚠️拥挤预警', hot:'🔥火热', warm:'🟣动量搭车', cold:'🧊冷清' };
-    const levelAdvice = { extreme:'立即减仓/清仓，踩踏风险极高', crowded:'减仓50%，锁定利润', hot:'持有不追加仓位', warm:'小仓位顺势介入，严格止损(-7%)', cold:'优质标的可逆向布局' };
-    const marketLevel = avgCrowding>=80?'extreme':avgCrowding>=65?'crowded':avgCrowding>=45?'hot':avgCrowding>=25?'warm':'cold';
-    const stockRow = (s, type) => {
-      const f = parseFactors(s);
-      const pctColor = (f.ret_5d||0)>=0?'#f04438':'#12b76a';
-      return `<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:8px 12px"><b>${s.name}</b> <span style="color:#98a2b3;font-size:11px">${s.code}</span></td><td style="padding:8px 12px;text-align:center"><div style="display:inline-block;width:60px;height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden"><div style="width:${s.combined_crowding_score}%;height:100%;background:${levelColor[s.level]||'#98a2b3'}"></div></div><span style="margin-left:6px;font-weight:700;color:${levelColor[s.level]||'#333'};font-size:12px">${s.combined_crowding_score}°</span></td><td style="padding:8px 12px;text-align:right;color:${pctColor};font-weight:600;font-family:monospace">${(f.ret_5d||0)>0?'+':''}${(f.ret_5d||0).toFixed?.(1)||0}%</td><td style="padding:8px 12px;text-align:right;color:${pctColor};font-weight:600;font-family:monospace">${(f.ret_20d||0)>0?'+':''}${(f.ret_20d||0).toFixed?.(1)||0}%</td><td style="padding:8px 12px;text-align:center;font-weight:600;color:#101828">${s.total_score||'-'}</td><td style="padding:8px 12px;font-size:11px;color:#667085">${(f.reasons||[]).join('、')||(type==='momentum'?'动量温和加速':type==='cold'?'优质低位':'放量加速')}</td></tr>`;
-    };
-    const sectorRow = (s) => `<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 12px;font-weight:500">${s.sector}</td><td style="padding:6px 12px;width:50%"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:12px;background:#f0f0f0;border-radius:6px;overflow:hidden"><div style="width:${s.crowding_score}%;height:100%;background:linear-gradient(90deg,#12b76a,#9e77ed,#f79009,#f04438,#d92d20);border-radius:6px"></div></div><span style="font-weight:700;color:${levelColor[s.level]};min-width:32px;font-size:12px">${s.crowding_score}°</span></div></td><td style="padding:6px 12px"><span style="background:${levelColor[s.level]}15;color:${levelColor[s.level]};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${levelLabel[s.level]}</span></td><td style="padding:6px 12px;color:#98a2b3;font-size:11px">${s.stock_count}只</td></tr>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>📡 拥挤度雷达 - 仓位满上</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f7fa;color:#101828;padding:24px}h1{font-size:24px;font-weight:700;margin-bottom:4px}h2{font-size:16px;font-weight:600;margin-bottom:12px}.subtitle{color:#98a2b3;font-size:13px;margin-bottom:20px}.card{background:#fff;border-radius:12px;border:1px solid #eaecf0;padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(16,24,40,0.04)}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}.stat{text-align:center;padding:16px;border-radius:10px}.stat-num{font-size:32px;font-weight:800;font-family:'Inter',monospace;line-height:1;margin-bottom:6px}.stat-label{font-size:12px;color:#667085;font-weight:500}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:10px 12px;background:#fafbfb;font-size:11px;color:#667085;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;border-bottom:1px solid #eaecf0}.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}.back{display:inline-block;margin-bottom:16px;color:#1677ff;text-decoration:none;font-size:13px}.back:hover{text-decoration:underline}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}</style></head><body><a href="/" class="back">← 返回市场总览</a><h1>📡 量化拥挤度雷达</h1><p class="subtitle">识别量化资金行为模式 · 搭车加速段 · 拥挤极端前先跑 · ${dayjs().format('YYYY-MM-DD HH:mm')}</p><div class="grid"><div class="stat" style="background:${levelColor[marketLevel]}15"><div class="stat-num" style="color:${levelColor[marketLevel]}">${avgCrowding}°</div><div class="stat-label">全市场平均拥挤度</div><div class="tag" style="background:${levelColor[marketLevel]};color:#fff;margin-top:8px;font-size:11px">${levelLabel[marketLevel]}</div><div style="font-size:11px;color:#667085;margin-top:6px">${levelAdvice[marketLevel]}</div></div><div class="stat" style="background:#fff1f0"><div class="stat-num" style="color:#d92d20">${exitStocks.length}</div><div class="stat-label">🚨 减仓/清仓预警</div><div style="font-size:11px;color:#98a2b3;margin-top:6px">拥挤度≥75°，踩踏风险</div></div><div class="stat" style="background:#f9f5ff"><div class="stat-num" style="color:#9e77ed">${momentumStocks.length}</div><div class="stat-label">🟣 动量搭车候选</div><div style="font-size:11px;color:#98a2b3;margin-top:6px">拥挤度30-55°，温和加速</div></div><div class="stat" style="background:#ecfdf3"><div class="stat-num" style="color:#12b76a">${coldStocks.length}</div><div class="stat-label">🧊 冷清逆向机会</div><div style="font-size:11px;color:#98a2b3;margin-top:6px">无人关注，基本面优质</div></div></div>${exitStocks.length>0?`<div class="card" style="border-color:#f04438"><h2 style="color:#d92d20">⚠️ 拥挤度减仓预警（${exitStocks.length}只）</h2><p style="font-size:12px;color:#667085;margin-bottom:12px">以下个股拥挤度达到极端水平，量化资金一致性过高，存在踩踏风险。建议主动减仓锁定利润。</p><table><thead><tr><th>股票</th><th style="text-align:center">拥挤度</th><th style="text-align:right">5日涨幅</th><th style="text-align:right">20日涨幅</th><th style="text-align:center">综合分</th><th>信号</th></tr></thead><tbody>${exitStocks.map(s=>stockRow(s,'exit')).join('')}</tbody></table></div>`:''}<div class="card"><h2>📊 板块拥挤度热力图（${sectors.length}个板块）</h2><table><thead><tr><th>板块</th><th>拥挤度</th><th>状态</th><th>成分股</th></tr></thead><tbody>${sectors.map(s=>sectorRow(s)).join('')}</tbody></table></div><div class="two-col"><div class="card"><h2 style="color:#9e77ed">🟣 动量搭车机会（${momentumStocks.length}只）</h2><p style="font-size:12px;color:#667085;margin-bottom:12px">量化刚开始涌入，温和加速阶段。单只5-8%仓位，-7%严格止损，拥挤度到80止盈。</p><table><thead><tr><th>股票</th><th style="text-align:center">拥挤度</th><th style="text-align:right">5日</th><th style="text-align:right">20日</th><th style="text-align:center">总分</th><th>理由</th></tr></thead><tbody>${momentumStocks.slice(0,10).map(s=>stockRow(s,'momentum')).join('')}</tbody></table></div><div class="card"><h2 style="color:#12b76a">🧊 冷清逆向机会（${coldStocks.length}只）</h2><p style="font-size:12px;color:#667085;margin-bottom:12px">无人问津的优质股，基本面好+估值低+拥挤度低，适合长线布局。</p><table><thead><tr><th>股票</th><th style="text-align:center">拥挤度</th><th style="text-align:right">质量分</th><th style="text-align:right">估值分</th><th style="text-align:center">总分</th></tr></thead><tbody>${coldStocks.map(s=>{return `<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:8px 12px"><b>${s.name}</b> <span style="color:#98a2b3;font-size:11px">${s.code}</span></td><td style="padding:8px 12px;text-align:center"><span style="color:#12b76a;font-weight:700;font-size:12px">${s.combined_crowding_score}°</span></td><td style="padding:8px 12px;text-align:center;color:#12b76a;font-weight:600">${s.quality_score||'-'}</td><td style="padding:8px 12px;text-align:center;color:#f04438;font-weight:600">${s.valuation_score||'-'}</td><td style="padding:8px 12px;text-align:center;font-weight:700">${s.total_score||'-'}</td></tr>`;}).join('')}</tbody></table></div></div><div class="card" style="background:#f9fafb"><h2>💡 策略说明</h2><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;font-size:12px"><div><b style="color:#12b76a">0-30° 冷清</b><br><span style="color:#667085">无人问津，逆向布局优质股</span></div><div><b style="color:#9e77ed">30-55° 搭车</b><br><span style="color:#667085">量化刚涌入，小仓顺势介入(-7%止损)</span></div><div><b style="color:#f79009">55-75° 持有</b><br><span style="color:#667085">趋势延续，不追加</span></div><div><b style="color:#f04438">75-90° 预警</b><br><span style="color:#667085">拥挤，减仓50%</span></div><div><b style="color:#d92d20">90°+ 极端</b><br><span style="color:#667085">踩踏风险极高，立即清仓</span></div></div></div></body></html>`;
-    res.send(html);
-  } catch(e) { res.status(500).send('<h1>错误</h1><p>'+e.message+'</p><p><a href="/">返回</a></p>'); }
-});
-
 // ========== 静态文件缓存策略 ==========
 const staticPath = path.join(__dirname, 'web', 'dist');
 app.use('/assets/', express.static(path.join(staticPath, 'assets'), {
@@ -1717,7 +1643,7 @@ function serveIndex(req, res) {
   res.send(html);
 }
 app.get('/', serveIndex);
-app.get(/^\/(?!api|assets|crowding-radar)[^.]*$/, serveIndex);
+app.get(/^\/(?!api|assets)[^.]*$/, serveIndex);
 
 // ========== 定时任务 ==========
 
@@ -1798,7 +1724,7 @@ async function runAutoSync(mode = 'incremental') {
       console.log(`[cron] 技术指标: ${indCount}支`);
 
       // 4. 评分（syncFinance=true：仅对缺少财务数据的股票拉取，已有数据的不重复拉）
-      await scoreAllStocks(true, true, currentSettings);
+      await scoreAllStocks(true, currentSettings);
       console.log('[cron] 评分完成');
 
       // 5. 短线信号
@@ -1809,7 +1735,7 @@ async function runAutoSync(mode = 'incremental') {
     } else {
       // 增量同步：只更新行情+K线+快速评分（不重算指标和拥挤度）
       console.log('[cron] 增量模式：跳过技术指标/拥挤度重算');
-      await scoreAllStocks(false, false, currentSettings);
+      await scoreAllStocks(false, currentSettings);
       console.log('[cron] 快速评分完成');
     }
 
@@ -1960,7 +1886,7 @@ app.listen(PORT, '0.0.0.0', async () => {
       const scoredRow = await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score');
       if (scoredRow.c === 0) {
         console.log('[init] 无评分数据，快速评分中...');
-        await scoreAllStocks(false, false, userSettings);
+        await scoreAllStocks(false, userSettings);
         console.log('[init] 快速评分完成');
       } else {
         console.log(`[init] 已有 ${scoredRow.c} 只评分数据，跳过`);

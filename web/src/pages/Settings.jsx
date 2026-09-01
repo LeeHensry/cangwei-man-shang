@@ -19,8 +19,6 @@ const stageMeta = {
   kline:     { label: '同步K线',   color: 'var(--purple)' },
   indicator: { label: '计算指标',   color: 'var(--purple)' },
   score:     { label: '计算评分',   color: 'var(--warn)' },
-  short:     { label: '短线信号',   color: 'var(--warn)' },
-  crowding:  { label: '计算拥挤度', color: 'var(--warn)' },
   pool:      { label: '更新关注池', color: 'var(--warn)' },
   done:      { label: '完成',      color: 'var(--down)', icon: <CheckCircleOutlined /> },
   error:     { label: '失败',      color: 'var(--up)', icon: <CloseCircleOutlined /> },

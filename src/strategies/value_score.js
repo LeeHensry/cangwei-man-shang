@@ -9,7 +9,6 @@
 const { dbGet, dbAll, dbRun, dbBatch } = require('../data/db');
 const { getFinancialData } = require('../data/finance');
 const { getStockFlowSignals } = require('../data/money_flow');
-const { getCrowdingSignal, calcAllCrowding } = require('../factors/crowding');
 const dayjs = require('dayjs');
 
 // ========== 行业分类系统 ==========
@@ -624,7 +623,7 @@ async function calcTechnicalScore(code) {
 }
 
 // ========== 综合评分 & 信号 v2（含拥挤度调整）==========
-function calcTotalScore(code, qualityResult, valuationResult, technicalResult, crowdingResult, userSettings = null) {
+function calcTotalScore(code, qualityResult, valuationResult, technicalResult, userSettings = null) {
   // 行业动态权重
   const industry = classifyIndustry(code);
   const ind = industry.group;
@@ -657,22 +656,6 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
     technicalResult.score * W_TECHNICAL
   );
   
-  // ==== 拥挤度调整 ====
-  let crowdingAdjustment = '';
-  if (crowdingResult) {
-    // 动量搭车加分：温和加速阶段给新经济股/非老登股加分
-    if (crowdingResult.action === 'momentum_buy' && !industry.isOldman) {
-      const bonus = crowdingResult.momentum_bonus || 8;
-      totalScore += bonus;
-      crowdingAdjustment = `+${bonus}动量搭车`;
-    }
-    // 拥挤惩罚分：极端拥挤强制扣分
-    if (crowdingResult.crowding_penalty > 0) {
-      totalScore -= crowdingResult.crowding_penalty;
-      crowdingAdjustment = `-${crowdingResult.crowding_penalty}拥挤惩罚`;
-    }
-  }
-  
   totalScore = Math.max(0, Math.min(100, totalScore));
   
   // 困境行业（地产）总分封顶50
@@ -681,41 +664,6 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
   // 信号判断
   let signal = 'hold';
   let reason = [];
-  
-  // ==== 拥挤度硬规则（凌驾于常规信号之上）====
-  if (crowdingResult) {
-    if (crowdingResult.action === 'exit') {
-      signal = 'sell';
-      reason.push(crowdingResult.action_detail || '🚨 拥挤度极端，清仓避险');
-      if (crowdingResult.reasons && crowdingResult.reasons.length > 0) {
-        reason.push(...crowdingResult.reasons);
-      }
-      return {
-        total_score: totalScore,
-        signal,
-        reason,
-        weights: { quality: W_QUALITY, valuation: W_VALUATION, technical: W_TECHNICAL },
-        crowding_adjustment: crowdingAdjustment,
-        crowding_action: crowdingResult.action,
-      };
-    }
-    if (crowdingResult.action === 'trim') {
-      signal = 'sell';
-      reason.push(crowdingResult.action_detail || '⚠️ 拥挤预警，建议减仓');
-      if (crowdingResult.reasons && crowdingResult.reasons.length > 0) {
-        reason.push(...crowdingResult.reasons);
-      }
-      // 不直接return，因为如果基本面极好可能只是减仓而非清仓，但给出强sell信号
-      return {
-        total_score: totalScore,
-        signal: 'sell',
-        reason,
-        weights: { quality: W_QUALITY, valuation: W_VALUATION, technical: W_TECHNICAL },
-        crowding_adjustment: crowdingAdjustment,
-        crowding_action: crowdingResult.action,
-      };
-    }
-  }
   
   // ==== 常规信号判断 ====
   if (qualityResult.score >= BUY_QUAL && valuationResult.score >= BUY_VAL) {
@@ -741,29 +689,16 @@ function calcTotalScore(code, qualityResult, valuationResult, technicalResult, c
     reason.push('传统老登股且基本面一般，资金效率低');
   }
   
-  // ==== 动量搭车信号：在常规watch/hold基础上升级为momentum_buy ====
-  if (crowdingResult && crowdingResult.action === 'momentum_buy' && !industry.isOldman && signal !== 'sell') {
-    if (technicalResult.score >= 55 && totalScore >= 50) {
-      signal = 'momentum_buy';
-      reason.push(crowdingResult.action_detail || '🟣 动量搭车机会');
-      if (crowdingResult.reasons && crowdingResult.reasons.length > 0) {
-        reason.push(...crowdingResult.reasons);
-      }
-    }
-  }
-  
   return {
     total_score: totalScore,
     signal,
     reason,
     weights: { quality: W_QUALITY, valuation: W_VALUATION, technical: W_TECHNICAL },
-    crowding_adjustment: crowdingAdjustment,
-    crowding_action: crowdingResult?.action,
   };
 }
 
 // ========== 批量评分 ==========
-async function scoreAllStocks(syncFinance = true, includeCrowding = true, settings = null) {
+async function scoreAllStocks(syncFinance = true, settings = null) {
   // 优先从股票池取代码，fallback到stock_info
   let poolCodes = await dbAll('SELECT code, name FROM stock_pool WHERE in_pool = 1');
   let codes = poolCodes;
@@ -773,21 +708,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
   const today = dayjs().format('YYYYMMDD');
   const results = [];
   
-  console.log(`\n🔍 开始评分(v2+拥挤度)，共 ${codes.length} 只股票`);
-  
-  // 预计算拥挤度（会内部缓存板块拥挤度）
-  let crowdingCache = {};
-  if (includeCrowding) {
-    try {
-      console.log('  计算拥挤度因子...');
-      await calcAllCrowding();
-      const crowdRows = await dbAll('SELECT * FROM crowding_score WHERE trade_date = ?', [today]);
-      for (const r of crowdRows) crowdingCache[r.code] = r;
-      console.log(`  拥挤度计算完成，缓存 ${Object.keys(crowdingCache).length} 只`);
-    } catch(e) {
-      console.error('  拥挤度计算失败，跳过:', e.message);
-    }
-  }
+  console.log(`\n🔍 开始评分(v2)，共 ${codes.length} 只股票`);
   
   for (let i = 0; i < codes.length; i++) {
     const { code, name } = codes[i];
@@ -815,25 +736,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
       // 放量上涨/缩量调整信号加入技术信号
       if (flow.signals) technical.signals = [...(technical.signals||[]), ...flow.signals];
       
-      // ==== 拥挤度因子 ====
-      let crowdingResult = null;
-      const cached = crowdingCache[code];
-      if (cached) {
-        crowdingResult = {
-          action: cached.action,
-          momentum_bonus: cached.momentum_bonus,
-          crowding_penalty: cached.crowding_penalty,
-          action_detail: null,
-          reasons: [],
-        };
-        try {
-          const factors = JSON.parse(cached.factors_json);
-          crowdingResult.reasons = factors.reasons || [];
-          crowdingResult.action_detail = null;
-        } catch(e) {}
-      }
-      
-      const total = calcTotalScore(code, quality, valuation, technical, crowdingResult, settings);
+      const total = calcTotalScore(code, quality, valuation, technical, settings);
       
       const latestKline = await dbGet('SELECT close FROM daily_kline WHERE code = ? ORDER BY trade_date DESC LIMIT 1', [code]);
       const currentPrice = latestKline?.close;
@@ -842,10 +745,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
       if (currentPrice) {
         const industry = classifyIndustry(code, name);
         // 动量搭车票：更紧的止损，更快的止盈
-        if (total.signal === 'momentum_buy') {
-          targetPrice = +(currentPrice * 1.2).toFixed(2);  // 20%目标（更短周期）
-          stopLoss = +(currentPrice * 0.93).toFixed(2);     // -7%严格止损
-        } else if (total.signal === 'buy') {
+        if (total.signal === 'buy') {
           const upside = industry.isNewEconomy ? 0.4 : industry.isOldman ? 0.2 : 0.3;
           targetPrice = +(currentPrice * (1 + upside)).toFixed(2);
           stopLoss = +(currentPrice * (industry.isOldman ? 0.92 : 0.85)).toFixed(2);
@@ -854,10 +754,9 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
         }
       }
       
-      // 建议仓位：动量搭车票更轻
+      // 建议仓位
       let positionPct = 5;
       if (total.signal === 'buy') positionPct = total.total_score >= 75 ? 15 : 10;
-      else if (total.signal === 'momentum_buy') positionPct = 5; // 单只5-8%，严格控制
       else if (total.signal === 'watch') positionPct = 0;
       else if (total.signal === 'sell') positionPct = 0;
       
@@ -877,8 +776,6 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
         valuation_detail: JSON.stringify(valuation),
         technical_detail: JSON.stringify({ signals: technical.signals, rsi14: technical.rsi14 }),
         reason: JSON.stringify(total.reason),
-        crowding_score: crowdingCache[code]?.combined_crowding_score || null,
-        crowding_level: crowdingCache[code]?.level || null,
       });
     } catch (e) {
       console.error(`  ${code}评分失败:`, e.message);
@@ -891,7 +788,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
   const baseColumns = ['code', 'name', 'trade_date', 'strategy', 'quality_score', 'valuation_score',
     'technical_score', 'total_score', 'signal', 'current_price', 'target_price', 'stop_loss',
     'position_pct', 'quality_detail', 'quality_latest', 'valuation_detail', 'technical_detail', 'reason'];
-  const allColumns = [...baseColumns, 'fund_score', 'sentiment_score', 'crowding_score', 'crowding_level'];
+  const allColumns = [...baseColumns, 'fund_score', 'sentiment_score'];
 
   const insertSql = `INSERT OR REPLACE INTO stock_score
     (${allColumns.join(',')}) VALUES (${allColumns.map(()=>'?').join(',')})`;
@@ -900,9 +797,7 @@ async function scoreAllStocks(syncFinance = true, includeCrowding = true, settin
     sql: insertSql,
     args: [
       ...baseColumns.map(c => r[c] ?? null),
-      0, 0,
-      r.crowding_score ?? null,
-      r.crowding_level ?? null
+      0, 0
     ]
   }));
   

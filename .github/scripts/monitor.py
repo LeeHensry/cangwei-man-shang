@@ -5,8 +5,8 @@
 
 检查维度：
 1. 服务可用性  - /api/version 是否可响应（冷启动重试 3 次）
-2. 数据新鲜度  - K线/评分/拥挤度最新日期 vs 期望交易日（同步窗口内跳过）
-3. 数据完整性  - pool/klines/indicators/crowding/finance 数量是否在合理区间
+2. 数据新鲜度  - K线/评分最新日期 vs 期望交易日（同步窗口内跳过）
+3. 数据完整性  - pool/klines/indicators/finance 数量是否在合理区间
 4. 信号合理性  - 最新评分信号分布是否异常（全部 sell）
 
 报警方式：发现问题时用 gh 创建 GitHub Issue（标题固定去重，已有 open Issue 则跳过）
@@ -113,10 +113,10 @@ def build_body(problems, health, version, checked_at):
     rows = [
         ("pool 股票池", db.get("pool")), ("stock_info", db.get("stocks")),
         ("daily_kline", db.get("klines")), ("indicators", db.get("indicators")),
-        ("scores", db.get("scores")), ("crowding", db.get("crowding")),
+        ("scores", db.get("scores")),
         ("finance", db.get("finance")),
         ("K线最新日期", f.get("kline_latest")), ("评分最新日期", f.get("score_latest")),
-        ("拥挤度最新日期", f.get("crowding_latest")), ("期望日期", f.get("expected")),
+        ("期望日期", f.get("expected")),
         ("信号分布", f"buy {s.get('buy')} / watch {s.get('watch')} / hold {s.get('hold')} / sell {s.get('sell')} / total {s.get('total')}"),
         ("同步状态", health.get("sync", {}).get("running")),
     ]
@@ -157,12 +157,13 @@ def main():
 
         # 3. 数据新鲜度（同步窗口内跳过，避免误报）
         if not in_sync_window():
-            for name, diff in (("K线", f.get("kline_diff_days")), ("评分", f.get("score_diff_days")), ("拥挤度", f.get("crowding_diff_days"))):
+            for name, diff, latest in (("K线", f.get("kline_diff_days"), f.get("kline_latest")),
+                                       ("评分", f.get("score_diff_days"), f.get("score_latest"))):
                 if diff is None:
                     problems.append((f"{name}数据缺失", "最新日期为空（表无数据）"))
                 elif diff >= FRESHNESS_ALERT_DAYS:
-                    problems.append((f"{name}数据过期", f"最新 {f.get(name.lower() + '_latest')}，期望 {f.get('expected')}，落后 {diff} 天"))
-            print(f"ℹ️ 新鲜度: K线 {f.get('kline_diff_days')}天 / 评分 {f.get('score_diff_days')}天 / 拥挤度 {f.get('crowding_diff_days')}天")
+                    problems.append((f"{name}数据过期", f"最新 {latest}，期望 {f.get('expected')}，落后 {diff} 天"))
+            print(f"ℹ️ 新鲜度: K线 {f.get('kline_diff_days')}天 / 评分 {f.get('score_diff_days')}天")
         else:
             print(f"ℹ️ 同步窗口内，跳过新鲜度检查")
 
@@ -171,7 +172,7 @@ def main():
             problems.append(("股票池不足", f"pool={db.get('pool')}（阈值 {MIN_POOL}）"))
         if db.get("klines", 0) < MIN_KLINES:
             problems.append(("K线数据量异常", f"klines={db.get('klines')}（阈值 {MIN_KLINES}）"))
-        for name, key in (("指标", "indicators"), ("拥挤度", "crowding"), ("财务", "finance")):
+        for name, key in (("指标", "indicators"), ("财务", "finance")):
             if db.get(key, 0) == 0:
                 problems.append((f"{name}数据为空", f"{key}=0"))
 
@@ -185,7 +186,7 @@ def main():
 
         # 打印快照
         print(f"ℹ️ DB: pool={db.get('pool')} klines={db.get('klines')} indicators={db.get('indicators')} "
-              f"scores={db.get('scores')} crowding={db.get('crowding')} finance={db.get('finance')}")
+              f"scores={db.get('scores')} finance={db.get('finance')}")
         print(f"ℹ️ 同步: {health.get('sync')}")
 
     # 6. 报警

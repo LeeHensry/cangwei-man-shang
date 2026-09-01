@@ -3,11 +3,8 @@ import { Layout, Menu, Typography, Badge, Space, Result, Button, Drawer } from '
 import {
   DashboardOutlined,
   ThunderboltOutlined,
-  RocketOutlined,
   WalletOutlined,
-  RadarChartOutlined,
   StarOutlined,
-  HistoryOutlined,
   ControlOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -19,11 +16,8 @@ import { AuthProvider, UserBadge, useAuth } from './auth';
 import { useIsMobile } from './utils/useIsMobile';
 import Dashboard from './pages/Dashboard';
 import Signals from './pages/Signals';
-import Crowding from './pages/Crowding';
 import StockDetail from './pages/StockDetail';
 import Holdings from './pages/Holdings';
-import Backtest from './pages/Backtest';
-import ShortTerm from './pages/ShortTerm';
 import Crypto from './pages/Crypto';
 import Options from './pages/Options';
 import Settings from './pages/Settings';
@@ -154,20 +148,17 @@ function AppShell() {
   const allMenuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '市场总览' },
     { key: '/signals', icon: <ThunderboltOutlined />, label: '价值信号' },
-    { key: '/short', icon: <RocketOutlined />, label: '短线机会' },
     { key: '/crypto', icon: <WalletOutlined />, label: '加密货币' },
     { key: '/options', icon: <FundProjectionScreenOutlined />, label: '期权策略' },
-    { key: '/crowding', icon: <RadarChartOutlined />, label: '拥挤度雷达' },
     { key: '/holdings', icon: <StarOutlined />, label: '自选持仓' },
-    { key: '/backtest', icon: <HistoryOutlined />, label: '回测分析' },
     { key: '/settings', icon: <ControlOutlined />, label: '策略配置', adminOnly: true },
   ];
 
   const menuItems = allMenuItems.filter(item => !item.adminOnly || user?.role === 'admin');
 
   const getPageTitle = () => {
-    const map = { '/': '市场总览', '/signals': '价值信号', '/short': '短线机会', '/crypto': '加密货币',
-      '/options': '期权策略', '/crowding': '拥挤度雷达', '/holdings': '自选持仓', '/backtest': '回测分析', '/settings': '策略配置' };
+    const map = { '/': '市场总览', '/signals': '价值信号', '/crypto': '加密货币',
+      '/options': '期权策略', '/holdings': '自选持仓', '/settings': '策略配置' };
     for (const [path, title] of Object.entries(map)) {
       if (location.pathname.startsWith(path) && path !== '/') return title;
       if (location.pathname === path) return title;
@@ -280,13 +271,10 @@ function AppShell() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/signals" element={<Signals />} />
-            <Route path="/short" element={<ShortTerm />} />
             <Route path="/crypto" element={<Crypto />} />
             <Route path="/options" element={<Options />} />
-            <Route path="/crowding" element={<Crowding />} />
             <Route path="/stock/:code" element={<StockDetail />} />
             <Route path="/holdings" element={<Holdings />} />
-            <Route path="/backtest" element={<Backtest />} />
             <Route path="/settings" element={<RequireAdmin><Settings /></RequireAdmin>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

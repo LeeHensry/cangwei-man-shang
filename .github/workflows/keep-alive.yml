@@ -27,10 +27,6 @@ on:
           - indicators
           - finance
           - score
-          - crowding
-          - pool
-          - score
-          - crowding
           - pool
 
 jobs:
