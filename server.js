@@ -858,8 +858,8 @@ app.post('/api/sync/step', async (req, res) => {
         nextStep = 'finance';
         const r = await runStepFinance(startTime, batchSize * 2);
         stepResult = r;
-      } else if (status.scores < status.pool && process.env.DISABLE_AUTO_SCORE !== 'true') {
-        // 评分不够→评分
+      } else if (status.scores < status.pool && process.env.DISABLE_LEGACY_SCORING !== 'true') {
+        // 评分不够→评分（旧引擎，可通过 DISABLE_LEGACY_SCORING=true 关闭）
         nextStep = 'score';
         await scoreAllStocks(false, userSettings);
         stepResult = { subStep: 'score', done: true };
@@ -906,13 +906,14 @@ app.post('/api/cleanup/remove-stocks', async (req, res) => {
 
 // 辅助函数：获取同步状态摘要
 async function getSyncStatus() {
-  const poolCount = (await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0;
-  const stockCount = (await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0;
-  const klineCount = (await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0;
-  const indCount = (await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0;
-  const scoreCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0;
-  const crowdCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0;
-  const financeCount = (await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0;
+  const poolCount = parseInt((await dbGet('SELECT COUNT(*) as c FROM stock_pool WHERE in_pool=1'))?.c || 0, 10);
+  const stockCount = parseInt((await dbGet('SELECT COUNT(*) as c FROM stock_info'))?.c || 0, 10);
+  const klineCount = parseInt((await dbGet('SELECT COUNT(*) as c FROM daily_kline'))?.c || 0, 10);
+  const indCount = parseInt((await dbGet('SELECT COUNT(*) as c FROM technical_indicators'))?.c || 0, 10);
+  const scoreCount = parseInt((await dbGet('SELECT COUNT(DISTINCT code) as c FROM stock_score'))?.c || 0, 10);
+  let crowdCount = 0;
+  try { crowdCount = parseInt((await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0, 10); } catch(e) { /* 表可能已删除 */ }
+  const financeCount = parseInt((await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0, 10);
   return { pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount, scores: scoreCount, crowding: crowdCount, finance: financeCount };
 }
 
