@@ -1442,7 +1442,7 @@ app.post('/api/scores/upload', async (req, res) => {
 
     const COLS = ['code','trade_date','strategy','name','industry','sw_l1',
       'quality_score','valuation_score','technical_score','fund_score','sentiment_score',
-      'score_G','score_F','score_L','total_score','signal','rank_num','market_pct',
+      'score_E','score_G','score_F','score_L','total_score','signal','rank_num','market_pct',
       'current_price','pe','pb','mktcap_yi','np_mom','volatility_20d','ret_20d','ret_60d'];
     const PH = COLS.map(() => '?').join(',');
 
@@ -1456,8 +1456,9 @@ app.post('/api/scores/upload', async (req, res) => {
           sql: `INSERT OR REPLACE INTO stock_score (${COLS.join(',')}) VALUES (${PH})`,
           args: [
             String(r.code), String(trade_date), strat, r.name ?? null, r.sw_l1 ?? null, r.sw_l1 ?? null,
-            r.score_Q ?? null, r.score_V ?? null, r.score_T ?? null, r.score_M ?? null, null,
-            r.score_G ?? null, r.score_F ?? null, r.score_L ?? null, r.total_score ?? null,
+            // v3.0: quality←score_E(盈利动量), valuation←score_V, technical←score_M(资金面观察位)
+            r.score_E ?? null, r.score_V ?? null, r.score_M ?? null, r.score_M ?? null, null,
+            r.score_E ?? null, null, null, null, r.total_score ?? null,
             (r.rating ?? 'hold').toLowerCase(), r.rank ?? null, r.market_pct ?? null,
             r.price ?? null, r.pe ?? null, r.pb ?? null, r.mktcap_yi ?? null, r.np_mom ?? null,
             r.volatility_20d ?? null, r.ret_20d ?? null, r.ret_60d ?? null,

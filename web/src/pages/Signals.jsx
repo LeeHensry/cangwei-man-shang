@@ -89,11 +89,11 @@ export default function Signals() {
         </div>
       )
     },
-    { title: <Tooltip title="盈利能力+成长+健康+稳定">质量</Tooltip>, dataIndex: 'quality_score', width: 60, align: 'center', sorter: true,
+    { title: <Tooltip title="盈利动量: 净利润环比动量+现金流质量 (E维度40%)">盈利</Tooltip>, dataIndex: 'quality_score', width: 60, align: 'center', sorter: true,
       render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--down)' : v >= 45 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
-    { title: <Tooltip title="PE估值+价格位置">估值</Tooltip>, dataIndex: 'valuation_score', width: 60, align: 'center', sorter: true,
+    { title: <Tooltip title="PB/PE/PS反向打分, 权重按IC强度定 (V维度55%)">估值</Tooltip>, dataIndex: 'valuation_score', width: 60, align: 'center', sorter: true,
       render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--up)' : v >= 40 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
-    { title: <Tooltip title="均线/MACD/RSI/量能">技术</Tooltip>, dataIndex: 'technical_score', width: 60, align: 'center', sorter: true,
+    { title: <Tooltip title="资金净流入 (M维度5%观察位)">资金</Tooltip>, dataIndex: 'technical_score', width: 60, align: 'center', sorter: true,
       render: v => <Text strong style={{ fontSize: 13, color: v >= 60 ? 'var(--accent)' : v >= 45 ? 'var(--warn)' : '#8E8E93' }}>{v}</Text> },
     { title: '行业', dataIndex: 'industry', width: 120, ellipsis: true,
       render: v => <Text type="secondary" style={{ fontSize: 12 }}>{v || '-'}</Text> },

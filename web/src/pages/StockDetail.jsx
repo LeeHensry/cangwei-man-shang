@@ -199,9 +199,9 @@ export default function StockDetail() {
       <Row gutter={14} style={{ marginBottom: 14 }}>
         <Col span={8}>
           <Card bodyStyle={{ padding: '16px 20px', display:'flex', alignItems:'center', gap:16 }}>
-            <ScoreRing value={s.quality} color="var(--down)" label="质量" size={90} />
+            <ScoreRing value={s.quality} color="var(--down)" label="盈利" size={90} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1E', marginBottom: 8 }}>质量评分</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1E', marginBottom: 8 }}>盈利动量评分（v3.0: np_mom+cfo_to_np）</div>
               <Space direction="vertical" size={2} style={{ width: '100%' }}>
                 {[['盈利',qd.profit,30],['成长',qd.growth,25],['健康',qd.health,25],['稳定',qd.extra,20]].map(([name,v,max])=>(
                   <div key={name} style={{display:'flex',alignItems:'center',gap:8}}>

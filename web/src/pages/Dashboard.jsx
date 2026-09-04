@@ -163,11 +163,11 @@ export default function Dashboard() {
     },
     { title: '分项', align: 'center', width: 90, render: (_, r) => (
       <Space size={3}>
-        <Tooltip title="质量"><span style={{ fontSize: 11, color: 'var(--down)', fontWeight: 600 }}>{r.quality}</span></Tooltip>
+        <Tooltip title="盈利动量"><span style={{ fontSize: 11, color: 'var(--down)', fontWeight: 600 }}>{r.quality}</span></Tooltip>
         <Text type="secondary" style={{ fontSize: 9 }}>·</Text>
         <Tooltip title="估值"><span style={{ fontSize: 11, color: 'var(--up)', fontWeight: 600 }}>{r.valuation}</span></Tooltip>
         <Text type="secondary" style={{ fontSize: 9 }}>·</Text>
-        <Tooltip title="技术+资金"><span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{r.technical}</span></Tooltip>
+        <Tooltip title="资金面(观察位)"><span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{r.technical}</span></Tooltip>
       </Space>
     )},
     { title: '信号', dataIndex: 'signal', width: 84, align: 'center',

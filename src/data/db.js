@@ -44,6 +44,8 @@ const ALTER_COLS = [
   ['stock_score','valuation_detail','TEXT'],['stock_score','technical_detail','TEXT'],['stock_score','pe','REAL'],
   ['stock_pool','pool_score','REAL'],
   // Phase1.5 打分新字段（七维分 + 行业 + 风险指标）
+  // v3.0: score_E=盈利动量(np_mom/cfo_to_np); score_G/F/L 保留列但不再写入
+  ['stock_score','score_E','REAL'],
   ['stock_score','score_G','REAL'],
   ['stock_score','score_F','REAL'],
   ['stock_score','score_L','REAL'],
