@@ -11,7 +11,6 @@ const { Text } = Typography;
 
 const signalMeta = {
   buy: { label: '买入', color: 'var(--up)', bg: 'var(--up-soft)', icon: '' },
-  momentum_buy: { label: '动量', color: 'var(--purple)', bg: 'var(--purple-soft)', icon: '' },
   watch: { label: '关注', color: 'var(--warn)', bg: 'var(--warn-soft)', icon: '' },
   hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)', icon: '' },
   sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)', icon: '' },
@@ -113,7 +112,6 @@ export default function Signals() {
               options={[
                 { label: '全部', value: 'all' },
                 { label: '买入', value: 'buy' },
-                { label: '动量搭车', value: 'momentum_buy' },
                 { label: '关注', value: 'watch' },
                 { label: '持有', value: 'hold' },
                 { label: '减仓', value: 'sell' },

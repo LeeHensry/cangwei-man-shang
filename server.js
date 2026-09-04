@@ -604,13 +604,11 @@ app.post('/api/sync/step', async (req, res) => {
               let targetPrice = null, stopLoss = null;
               if (currentPrice) {
                 const industry = classifyIndustry(code, name);
-                if (total.signal === 'momentum_buy') { targetPrice = +(currentPrice*1.2).toFixed(2); stopLoss = +(currentPrice*0.93).toFixed(2); }
-                else if (total.signal === 'buy') { const upside = industry.isNewEconomy?0.4:industry.isOldman?0.2:0.3; targetPrice = +(currentPrice*(1+upside)).toFixed(2); stopLoss = +(currentPrice*(industry.isOldman?0.92:0.85)).toFixed(2); }
+                if (total.signal === 'buy') { const upside = industry.isNewEconomy?0.4:industry.isOldman?0.2:0.3; targetPrice = +(currentPrice*(1+upside)).toFixed(2); stopLoss = +(currentPrice*(industry.isOldman?0.92:0.85)).toFixed(2); }
                 else { stopLoss = +(currentPrice*(industry.isOldman?0.92:0.85)).toFixed(2); }
               }
               let positionPct = 5;
               if (total.signal === 'buy') positionPct = total.total_score >= 75 ? 15 : 10;
-              else if (total.signal === 'momentum_buy') positionPct = 5;
               else positionPct = 0;
               results.push({ code, name, trade_date: today, strategy: 'value',
                 quality_score: quality.score, valuation_score: valuation.score,
@@ -670,10 +668,7 @@ app.post('/api/sync/step', async (req, res) => {
             let targetPrice = null, stopLoss = null;
             if (currentPrice) {
               const industry = classifyIndustry(code, name);
-              if (total.signal === 'momentum_buy') {
-                targetPrice = +(currentPrice * 1.2).toFixed(2);
-                stopLoss = +(currentPrice * 0.93).toFixed(2);
-              } else if (total.signal === 'buy') {
+              if (total.signal === 'buy') {
                 const upside = industry.isNewEconomy ? 0.4 : industry.isOldman ? 0.2 : 0.3;
                 targetPrice = +(currentPrice * (1 + upside)).toFixed(2);
                 stopLoss = +(currentPrice * (industry.isOldman ? 0.92 : 0.85)).toFixed(2);
@@ -683,7 +678,6 @@ app.post('/api/sync/step', async (req, res) => {
             }
             let positionPct = 5;
             if (total.signal === 'buy') positionPct = total.total_score >= 75 ? 15 : 10;
-            else if (total.signal === 'momentum_buy') positionPct = 5;
             else if (total.signal === 'watch' || total.signal === 'sell') positionPct = 0;
 
             results.push({
@@ -1150,14 +1144,14 @@ app.get('/api/monitor/health', async (req, res) => {
       return Math.round((toUTC(expectedDate) - toUTC(n)) / 86400000);
     };
     // 信号分布（按最新评分日期，value 策略）
-    let signals = { buy: 0, watch: 0, hold: 0, sell: 0, momentum_buy: 0, total: 0 };
+    let signals = { buy: 0, watch: 0, hold: 0, sell: 0, total: 0 };
     if (dates.score) {
       const rows = await dbAll(`SELECT signal, COUNT(*) as c FROM stock_score WHERE trade_date = ? AND strategy = 'value' GROUP BY signal`, [dates.score]);
       const counts = {};
       for (const r of rows) counts[r.signal] = r.c;
       signals = {
         buy: Number(counts.buy || 0), watch: Number(counts.watch || 0), hold: Number(counts.hold || 0),
-        sell: Number(counts.sell || 0), momentum_buy: Number(counts.momentum_buy || 0),
+        sell: Number(counts.sell || 0),
         total: rows.reduce((a, r) => a + Number(r.c), 0),
       };
     }

@@ -18,7 +18,6 @@ const signalMeta = {
   watch: { label: '关注', color: 'var(--warn)', bg: 'var(--warn-soft)', icon: '' },
   hold: { label: '持有', color: 'var(--accent)', bg: 'var(--accent-soft)', icon: '' },
   sell: { label: '减仓', color: 'var(--down)', bg: 'var(--down-soft)', icon: '' },
-  momentum_buy: { label: '动量搭车', color: 'var(--purple)', bg: 'var(--purple-soft)', icon: '' },
 };
 
 function IndexCard({ item }) {
@@ -259,7 +258,7 @@ export default function Dashboard() {
           >
             {/* 信号数字行 */}
             <Row gutter={0} style={{ textAlign: 'center', marginBottom: 8 }}>
-              {['buy','momentum_buy','watch','hold','sell'].map(key => {
+              {['buy','watch','hold','sell'].map(key => {
                 const meta = signalMeta[key];
                 const count = data.signal_counts[key] || 0;
                 const pct = Math.round(count/signalTotal*100);
