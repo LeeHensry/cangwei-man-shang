@@ -1,0 +1,345 @@
+{
+  "total_signals": 11673,
+  "failed_pairs": [],
+  "replay_period": "2019-06-26 ~ 2026-09-02",
+  "by_signal": {
+    "long": {
+      "3d": {
+        "count": 1792,
+        "win_rate": 49.7,
+        "avg_ret": 1.13,
+        "median_ret": -0.03,
+        "best": 226.4,
+        "worst": -54.1
+      },
+      "7d": {
+        "count": 1792,
+        "win_rate": 49.9,
+        "avg_ret": 2.49,
+        "median_ret": -0.08,
+        "best": 287.3,
+        "worst": -61.5
+      }
+    },
+    "short": {
+      "3d": {
+        "count": 2083,
+        "win_rate": 52.5,
+        "avg_ret": 0.32,
+        "median_ret": 0.37,
+        "best": 39.2,
+        "worst": -61.3
+      },
+      "7d": {
+        "count": 2083,
+        "win_rate": 50.3,
+        "avg_ret": 0.0,
+        "median_ret": 0.07,
+        "best": 47.2,
+        "worst": -148.1
+      }
+    }
+  },
+  "by_btc_state": {
+    "long": {
+      "btc_bull": {
+        "count": 1511,
+        "win_rate_7d": 51.5,
+        "avg_ret_7d": 3.01
+      },
+      "btc_bear": {
+        "count": 243,
+        "win_rate_7d": 39.9,
+        "avg_ret_7d": -1.68
+      }
+    },
+    "short": {
+      "btc_bull": {
+        "count": 354,
+        "win_rate_7d": 54.5,
+        "avg_ret_7d": 1.2
+      },
+      "btc_bear": {
+        "count": 1711,
+        "win_rate_7d": 49.4,
+        "avg_ret_7d": -0.23
+      }
+    }
+  },
+  "top_pairs": {
+    "long": {
+      "RNDRUSDT": {
+        "n": 47.0,
+        "win": 66.0,
+        "avg": 9.2
+      },
+      "SHIBUSDT": {
+        "n": 66.0,
+        "win": 48.5,
+        "avg": 8.3
+      },
+      "FETUSDT": {
+        "n": 64.0,
+        "win": 59.4,
+        "avg": 7.7
+      },
+      "MATICUSDT": {
+        "n": 103.0,
+        "win": 59.2,
+        "avg": 7.1
+      },
+      "PEPEUSDT": {
+        "n": 49.0,
+        "win": 34.7,
+        "avg": 6.2
+      },
+      "SEIUSDT": {
+        "n": 44.0,
+        "win": 54.5,
+        "avg": 6.1
+      },
+      "NEARUSDT": {
+        "n": 88.0,
+        "win": 50.0,
+        "avg": 3.6
+      },
+      "DOGEUSDT": {
+        "n": 70.0,
+        "win": 50.0,
+        "avg": 3.6
+      },
+      "ADAUSDT": {
+        "n": 56.0,
+        "win": 53.6,
+        "avg": 3.3
+      },
+      "SOLUSDT": {
+        "n": 87.0,
+        "win": 54.0,
+        "avg": 2.9
+      },
+      "UNIUSDT": {
+        "n": 69.0,
+        "win": 56.5,
+        "avg": 2.6
+      },
+      "XRPUSDT": {
+        "n": 60.0,
+        "win": 40.0,
+        "avg": 2.5
+      },
+      "AVAXUSDT": {
+        "n": 72.0,
+        "win": 50.0,
+        "avg": 2.3
+      },
+      "BNBUSDT": {
+        "n": 96.0,
+        "win": 57.3,
+        "avg": 2.2
+      },
+      "SUIUSDT": {
+        "n": 52.0,
+        "win": 51.9,
+        "avg": 2.0
+      },
+      "BTCUSDT": {
+        "n": 84.0,
+        "win": 60.7,
+        "avg": 1.6
+      },
+      "DOTUSDT": {
+        "n": 60.0,
+        "win": 46.7,
+        "avg": 1.1
+      },
+      "ETHUSDT": {
+        "n": 81.0,
+        "win": 48.1,
+        "avg": 0.6
+      },
+      "OPUSDT": {
+        "n": 63.0,
+        "win": 46.0,
+        "avg": 0.5
+      },
+      "APTUSDT": {
+        "n": 42.0,
+        "win": 50.0,
+        "avg": 0.3
+      },
+      "ATOMUSDT": {
+        "n": 81.0,
+        "win": 43.2,
+        "avg": 0.1
+      },
+      "ARBUSDT": {
+        "n": 54.0,
+        "win": 44.4,
+        "avg": -0.2
+      },
+      "WIFUSDT": {
+        "n": 30.0,
+        "win": 46.7,
+        "avg": -0.3
+      },
+      "LTCUSDT": {
+        "n": 80.0,
+        "win": 51.2,
+        "avg": -0.6
+      },
+      "TONUSDT": {
+        "n": 15.0,
+        "win": 46.7,
+        "avg": -1.0
+      },
+      "INJUSDT": {
+        "n": 88.0,
+        "win": 36.4,
+        "avg": -1.2
+      },
+      "LINKUSDT": {
+        "n": 91.0,
+        "win": 36.3,
+        "avg": -2.5
+      }
+    },
+    "short": {
+      "ARBUSDT": {
+        "n": 62.0,
+        "win": 59.7,
+        "avg": 2.7
+      },
+      "AVAXUSDT": {
+        "n": 76.0,
+        "win": 53.9,
+        "avg": 2.2
+      },
+      "SEIUSDT": {
+        "n": 56.0,
+        "win": 57.1,
+        "avg": 1.8
+      },
+      "SUIUSDT": {
+        "n": 66.0,
+        "win": 57.6,
+        "avg": 1.5
+      },
+      "PEPEUSDT": {
+        "n": 65.0,
+        "win": 60.0,
+        "avg": 1.3
+      },
+      "BTCUSDT": {
+        "n": 68.0,
+        "win": 54.4,
+        "avg": 1.1
+      },
+      "LINKUSDT": {
+        "n": 83.0,
+        "win": 47.0,
+        "avg": 0.9
+      },
+      "ETHUSDT": {
+        "n": 76.0,
+        "win": 51.3,
+        "avg": 0.8
+      },
+      "ATOMUSDT": {
+        "n": 112.0,
+        "win": 55.4,
+        "avg": 0.6
+      },
+      "BNBUSDT": {
+        "n": 61.0,
+        "win": 49.2,
+        "avg": 0.4
+      },
+      "WIFUSDT": {
+        "n": 58.0,
+        "win": 48.3,
+        "avg": 0.4
+      },
+      "DOTUSDT": {
+        "n": 104.0,
+        "win": 52.9,
+        "avg": 0.3
+      },
+      "UNIUSDT": {
+        "n": 98.0,
+        "win": 53.1,
+        "avg": 0.3
+      },
+      "ADAUSDT": {
+        "n": 102.0,
+        "win": 51.0,
+        "avg": 0.1
+      },
+      "NEARUSDT": {
+        "n": 82.0,
+        "win": 53.7,
+        "avg": 0.1
+      },
+      "FETUSDT": {
+        "n": 99.0,
+        "win": 50.5,
+        "avg": -0.2
+      },
+      "DOGEUSDT": {
+        "n": 88.0,
+        "win": 46.6,
+        "avg": -0.3
+      },
+      "MATICUSDT": {
+        "n": 75.0,
+        "win": 53.3,
+        "avg": -0.3
+      },
+      "APTUSDT": {
+        "n": 76.0,
+        "win": 46.1,
+        "avg": -0.5
+      },
+      "INJUSDT": {
+        "n": 83.0,
+        "win": 43.4,
+        "avg": -0.8
+      },
+      "TONUSDT": {
+        "n": 47.0,
+        "win": 44.7,
+        "avg": -0.9
+      },
+      "OPUSDT": {
+        "n": 77.0,
+        "win": 51.9,
+        "avg": -0.9
+      },
+      "SHIBUSDT": {
+        "n": 84.0,
+        "win": 50.0,
+        "avg": -0.9
+      },
+      "SOLUSDT": {
+        "n": 70.0,
+        "win": 44.3,
+        "avg": -1.1
+      },
+      "LTCUSDT": {
+        "n": 75.0,
+        "win": 42.7,
+        "avg": -1.4
+      },
+      "XRPUSDT": {
+        "n": 94.0,
+        "win": 37.2,
+        "avg": -3.2
+      },
+      "RNDRUSDT": {
+        "n": 46.0,
+        "win": 41.3,
+        "avg": -3.9
+      }
+    }
+  }
+}

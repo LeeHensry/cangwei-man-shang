@@ -1,0 +1,17 @@
+# 默认全部忽略, 白名单式只收加密货币项目相关文件
+/*
+!/.gitignore
+!/README-crypto.md
+!/scripts/
+/scripts/*
+!/scripts/crypto_*.py
+!/scripts/fetch_klines_full.py
+!/docs/
+/docs/*
+!/docs/加密货币*.md
+!/data/
+/data/*
+!/data/crypto/
+/data/crypto/cache/*_15m.csv
+/data/crypto/*.log
+/data/crypto/replay_run.log

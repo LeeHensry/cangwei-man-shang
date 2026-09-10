@@ -1,0 +1,154 @@
+{
+  "pairs_used": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "DOTUSDT",
+    "LINKUSDT",
+    "MATICUSDT",
+    "LTCUSDT",
+    "UNIUSDT",
+    "ATOMUSDT",
+    "NEARUSDT",
+    "APTUSDT",
+    "ARBUSDT",
+    "OPUSDT",
+    "SUIUSDT",
+    "SEIUSDT",
+    "TONUSDT",
+    "PEPEUSDT",
+    "SHIBUSDT",
+    "WIFUSDT",
+    "FETUSDT",
+    "RNDRUSDT",
+    "INJUSDT"
+  ],
+  "pairs_missing": [],
+  "groups": {
+    "A_v1+v1风控": {
+      "label": "A_v1+v1风控",
+      "count": 3198,
+      "win_rate": 33.8,
+      "avg_pnl": -0.08,
+      "median_pnl": -5.2,
+      "profit_factor": 0.98,
+      "worst_trade": -5.2,
+      "best_trade": 11.8,
+      "avg_hold": 3.1,
+      "stop_rate": 61.4,
+      "target_rate": 24.0,
+      "expire_rate": 14.5,
+      "equity_multiple": 0.0,
+      "max_dd": -100.0
+    },
+    "B_v1+ATR风控": {
+      "label": "B_v1+ATR风控",
+      "count": 2624,
+      "win_rate": 46.7,
+      "avg_pnl": 0.08,
+      "median_pnl": -0.21,
+      "profit_factor": 1.06,
+      "worst_trade": -3.1,
+      "best_trade": 6.0,
+      "avg_hold": 5.8,
+      "stop_rate": 28.1,
+      "target_rate": 10.1,
+      "expire_rate": 61.7,
+      "equity_multiple": 3.2,
+      "max_dd": -51.5
+    },
+    "C_v2硬门控+ATR": {
+      "label": "C_v2硬门控+ATR",
+      "count": 939,
+      "win_rate": 46.5,
+      "avg_pnl": 0.24,
+      "median_pnl": -0.39,
+      "profit_factor": 1.16,
+      "worst_trade": -3.1,
+      "best_trade": 6.0,
+      "avg_hold": 5.6,
+      "stop_rate": 31.7,
+      "target_rate": 15.7,
+      "expire_rate": 52.6,
+      "equity_multiple": 5.73,
+      "max_dd": -38.9
+    },
+    "D_v2分级门控+ATR": {
+      "label": "D_v2分级门控+ATR",
+      "count": 966,
+      "win_rate": 45.9,
+      "avg_pnl": 0.22,
+      "median_pnl": -0.46,
+      "profit_factor": 1.13,
+      "worst_trade": -3.1,
+      "best_trade": 6.0,
+      "avg_hold": 5.5,
+      "stop_rate": 32.2,
+      "target_rate": 15.7,
+      "expire_rate": 52.1,
+      "equity_multiple": 5.12,
+      "max_dd": -45.0
+    }
+  },
+  "long_vs_short_D": {
+    "long": {
+      "count": 890,
+      "win_rate": 45.4,
+      "avg_pnl": 0.25,
+      "worst": -15.2
+    },
+    "short": {
+      "count": 76,
+      "win_rate": 51.3,
+      "avg_pnl": -0.13,
+      "worst": -15.2
+    }
+  },
+  "D_by_evt": {
+    "E1": {
+      "n": 281.0,
+      "win": 43.4,
+      "avg_pnl": 0.36
+    },
+    "E2": {
+      "n": 123.0,
+      "win": 51.2,
+      "avg_pnl": 0.46
+    },
+    "E3": {
+      "n": 486.0,
+      "win": 45.1,
+      "avg_pnl": 0.13
+    },
+    "S1": {
+      "n": 76.0,
+      "win": 51.3,
+      "avg_pnl": -0.13
+    }
+  },
+  "D_trio": {
+    "BTCUSDT": {
+      "n": 39.0,
+      "win": 64.1,
+      "avg_pnl": 0.84,
+      "sum_pnl": 32.8
+    },
+    "ETHUSDT": {
+      "n": 41.0,
+      "win": 51.2,
+      "avg_pnl": -0.13,
+      "sum_pnl": -5.4
+    },
+    "SOLUSDT": {
+      "n": 46.0,
+      "win": 41.3,
+      "avg_pnl": 0.25,
+      "sum_pnl": 11.6
+    }
+  }
+}
