@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.9.2 (2026-09-14)
+
+### 🔒 仓库治理
+- **下线账号清单文件**：`accounts.csv` / `账号清单.txt` 从版本库中移除（文件保留在本地，不入库）。两者含 105 个 Access Key 与用户名对应关系，不适合公开
+- **清理 CHANGELOG 明文凭据**：移除 v1.1.0 章节中的管理员 Access Key 明细表格及清单文件引用
+- **移除内部记忆文件**：`.workbuddy/memory/*.md` 取消跟踪（`.gitignore` 已有 `.workbuddy/` 规则，此前为历史遗留跟踪）
+- **新增敏感文件忽略规则**：`.gitignore` 补充 `accounts.csv` / `账号清单.txt` / `*账号*` / `*access_key*` / `credentials*` / `secrets*`
+
+### ✏️ 更名
+- 产品名称统一：**A股智能决策辅助系统 → 交易决策辅助**
+  - 文档 `A股智能决策辅助系统-产品架构文档.md/.html` → `交易决策辅助-产品架构文档.md/.html`（含文件内容标题）
+  - `package.json` description 同步更新
+- `README.md` 一键部署按钮链接由旧账号名更正为当前仓库地址
+
+---
+
 ## v1.6.3 (2026-08-21)
 
 ### 🐛 Bug 修复
@@ -53,16 +69,9 @@
 - 登录窗口去除注册 Tab，只保留 Access Key 输入
 - 403 无权限友好提示页
 
-### 🔑 内置管理员账号（5个）
-| Access Key | 用户名 |
-|---|---|
-| pw4esfks | 李忠兴 |
-| uia1y2qi | 超级管理员 |
-| bbtsekvi | 系统管理员 |
-| bjaqik9p | 运维管理员 |
-| p3tnbmwg | 策略管理员 |
+### 🔑 内置账号体系
 
-完整账号清单见 `账号清单.txt` / `accounts.csv`（100个access用户）。
+管理员账号与普通用户账号均为内置 Access Key，明细不在版本库中留存（见运行时账号库）。
 
 ### 📦 部署
 - 线上地址：https://cangwei-man-shang.onrender.com

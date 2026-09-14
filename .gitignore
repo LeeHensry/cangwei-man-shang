@@ -21,3 +21,11 @@ web/dist/
 data/ds_config.json
 server.js.bak
 .workbuddy/
+
+# ---- 敏感文件：禁止入库 ----
+accounts.csv
+账号清单.txt
+*账号*
+*access_key*
+credentials*
+secrets*
