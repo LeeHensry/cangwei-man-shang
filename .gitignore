@@ -15,3 +15,5 @@
 /data/crypto/cache/*_15m.csv
 /data/crypto/*.log
 /data/crypto/replay_run.log
+/data/crypto/paper/*.bak_*
+/data/crypto/paper/state.json.bak*

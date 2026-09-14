@@ -12,7 +12,10 @@ ETH 多空模拟盘引擎 v2.5 (paper trading)
   并发 : 多空共用上限4仓 | 熔断: 连续3笔止损 -> 暂停168h
 账户 : 虚拟10000 USDT 起步, 复利记账 equity *= (1 + net*notional)
 状态 : data/crypto/paper/state.json (幂等, 重跑安全)
-运行 : 每小时1次(自动化调度), 信号=最近一根已收盘1H K线
+日志 : data/crypto/paper/run_log.jsonl (每次运行一行, 可回溯调度连续性)
+补跑 : 记录 last_processed_bar, 下次运行从其后逐根回放缺失K线(漏跑自动补齐,
+       按时间顺序"先平仓后开仓", 不越界使用未来K线)
+运行 : 每小时1次(自动化调度), 处理区间 = [上次处理点+1, 最新已收盘K线]
 """
 import json
 import os
@@ -105,15 +108,6 @@ def build_all_feats(r2, ls):
     return f
 
 
-def gen_latest_signals(f, r2, ls):
-    """对最近一根已收盘K线判定多空信号(整段历史重算, 口径与回测一致)"""
-    n = len(f['close'])
-    last = n - 1
-    longs = r2.gen_signals2(f, CFG['long'])
-    shorts = ls.gen_short_signals(f, CFG['short'])
-    return (last in set(longs), last in set(shorts))
-
-
 def open_position(state, f, i, side):
     entry = f['close'][i]          # 信号K线收盘价入场(≈回测的下一根开盘)
     atr = f['atr'][i]
@@ -136,15 +130,21 @@ def open_position(state, f, i, side):
     })
 
 
-def check_exits(state, f):
-    """按1H高低点检查未平仓位的止损/止盈/到期(保守口径: 先止损)"""
+def check_exits(state, f, upto_idx=None):
+    """按1H高低点检查未平仓位的止损/止盈/到期(保守口径: 先止损)
+
+    upto_idx: 只处理到该下标(含)为止的K线。补跑历史时按时间顺序逐根推进,
+              避免"用未来K线判定过去持仓"的越界。
+    """
     d = pd.Series(pd.to_datetime(f['date']))
+    if upto_idx is None:
+        upto_idx = len(d) - 1
     lows, highs, closes = f['low'], f['high'], f['close']
     still, closed = [], []
     for pos in state['positions']:
         entry_t = pd.Timestamp(pos['entry_time'])
         exp_t = pd.Timestamp(pos['expire_time'])
-        mask = (d > entry_t) & (d <= min(exp_t, d.iloc[-1]))
+        mask = (d > entry_t) & (d <= min(exp_t, d.iloc[upto_idx]))
         idxs = d.index[mask]
         exit_price, exit_t, reason = None, None, None
         for j in idxs:
@@ -182,6 +182,13 @@ def check_exits(state, f):
             state['consec_stops'] = 0
     state['positions'] = still
     state['trades'] += closed
+    return closed
+
+
+def append_run_log(entry):
+    """每次运行追加一行JSONL, 用于回溯调度连续性与补跑情况"""
+    with open(f'{PAPER}/run_log.jsonl', 'a') as fo:
+        fo.write(json.dumps(entry, ensure_ascii=False) + '\n')
 
 
 def run():
@@ -195,41 +202,97 @@ def run():
                  'created_at': datetime.now().isoformat()}
 
     # 1) 更新K线缓存(ETH三周期 + BTC日线)
+    cache_rows = {}
     for pair, itv in [('ETHUSDT', '1h'), ('ETHUSDT', '4h'), ('ETHUSDT', '1d'),
                       ('BTCUSDT', '1d')]:
-        update_cache(pair, itv)
+        cache_rows[f'{pair}_{itv}'] = update_cache(pair, itv)
 
     # 2) 重建特征(与回测同源)
     r2, ls = load_modules()
     f = build_all_feats(r2, ls)
-    last_t = str(pd.Timestamp(f['date'][-1]))
+    d = pd.Series(pd.to_datetime(f['date']))
+    last_idx = len(f['close']) - 1
+    last_t = str(d.iloc[last_idx])
 
-    # 3) 平仓检查
-    check_exits(state, f)
+    # 3) 全序列信号(与回测同一套代码/参数, 整段重算保证口径一致)
+    longs = set(r2.gen_signals2(f, CFG['long']))
+    shorts = set(ls.gen_short_signals(f, CFG['short']))
 
-    # 4) 信号判定(熔断/并发/去重后开仓)
-    events = []
-    if not (state['pause_until'] and pd.Timestamp(last_t) < pd.Timestamp(state['pause_until'])):
-        is_l, is_s = gen_latest_signals(f, r2, ls)
-        open_cnt = len(state['positions'])
-        sig_key = f'{last_t}'
-        if is_l and sig_key not in state['opened_signals'] and open_cnt < CFG['max_conc']:
-            open_position(state, f, len(f['close']) - 1, 'L')
-            state['opened_signals'].append(f'L@{sig_key}')
-            events.append(f'OPEN LONG @ {last_t}')
-            open_cnt += 1
-        if is_s and sig_key not in state['opened_signals'] and open_cnt < CFG['max_conc']:
-            open_position(state, f, len(f['close']) - 1, 'S')
-            state['opened_signals'].append(f'S@{sig_key}')
-            events.append(f'OPEN SHORT @ {last_t}')
+    # 4) 确定待处理区间: 从上次处理点之后逐根回放(漏跑自动补齐)
+    prev_raw = state.get('last_processed_bar') or state.get('last_bar')
+    prev_idx = None
+    if prev_raw:
+        m = d.index[d == pd.Timestamp(prev_raw)]
+        if len(m):
+            prev_idx = int(m[0])
+    if prev_idx is None:
+        # 首次运行/对齐失败: 只判定最新一根(不追溯历史, 避免凭空造出历史仓位)
+        start_idx, missed = last_idx, 0
+        mode = 'init' if not prev_raw else 'reinit'
     else:
-        events.append(f"PAUSED until {state['pause_until']} (连亏熔断)")
+        start_idx = prev_idx + 1
+        missed = max(0, last_idx - prev_idx - 1)
+        mode = 'backfill' if missed > 0 else 'normal'
+
+    events, opens, closes, bars = [], [], [], []
+    sig_L, sig_S = [], []
+    for i in range(start_idx, last_idx + 1):
+        bar_t = d.iloc[i]
+        # 4a) 平仓检查(截至本根K线, 先于开仓)
+        for c in check_exits(state, f, upto_idx=i):
+            closes.append(c)
+            events.append(f"CLOSE {c['side']} {c['reason']} @ {str(c['exit_time'])[:16]} "
+                          f"net={c['net_pct']:+.2f}% equity={c['equity_after']:,.2f}")
+        # 4b) 熔断闸
+        if state.get('pause_until') and bar_t < pd.Timestamp(state['pause_until']):
+            bars.append({'bar': str(bar_t), 'signal': [], 'skip': 'paused'})
+            continue
+        # 4c) 信号闸 + 去重闸 + 并发闸
+        sig_key = str(bar_t)
+        here = []
+        if i in longs:
+            here.append('L'); sig_L.append(sig_key)
+        if i in shorts:
+            here.append('S'); sig_S.append(sig_key)
+        for side in here:
+            if f'{side}@{sig_key}' in state['opened_signals']:
+                continue                                  # 去重: 该K线已处理过
+            if len(state['positions']) >= CFG['max_conc']:
+                continue                                  # 并发闸
+            open_position(state, f, i, side)
+            state['opened_signals'].append(f'{side}@{sig_key}')
+            pos = state['positions'][-1]
+            opens.append({'side': side, 'time': sig_key, 'entry': pos['entry'],
+                          'stop': pos['stop'], 'target': pos['target'],
+                          'notional': pos['notional']})
+            events.append(f"OPEN {side} @ {sig_key[:16]} entry={pos['entry']} "
+                          f"stop={pos['stop']} target={pos['target']} "
+                          f"notional={pos['notional']}")
+        bars.append({'bar': sig_key, 'signal': here})
 
     state['last_run'] = datetime.now().isoformat()
     state['last_bar'] = last_t
+    state['last_processed_bar'] = last_t
+    state['run_count'] = state.get('run_count', 0) + 1
+    state['bars_evaluated_total'] = state.get('bars_evaluated_total', 0) + len(bars)
     json.dump(state, open(spath, 'w'), indent=2, ensure_ascii=False)
 
-    # 5) 输出运行报告
+    # 5) 运行日志(一行一次, 可回溯调度连续性与漏跑补齐)
+    append_run_log({
+        'run_at': state['last_run'], 'run_count': state['run_count'], 'mode': mode,
+        'last_bar': last_t, 'prev_bar': prev_raw,
+        'from_bar': str(d.iloc[start_idx]) if start_idx <= last_idx else None,
+        'bars_processed': len(bars), 'missed_bars': missed,
+        'backfilled': missed > 0,
+        'signals_L': sig_L[-50:], 'signals_S': sig_S[-50:],
+        'opens': opens,
+        'closes': [{'side': c['side'], 'reason': c['reason'],
+                    'exit_time': c['exit_time'], 'net_pct': c['net_pct']} for c in closes],
+        'equity': round(state['equity'], 2), 'positions': len(state['positions']),
+        'pause_until': state.get('pause_until'), 'cache_rows': cache_rows,
+    })
+
+    # 6) 输出运行报告
     write_report(state, f, events)
     return state
 
@@ -252,6 +315,37 @@ def write_report(state, f, events):
         (f" | 熔断暂停至 {state['pause_until']}" if state['pause_until'] else ""),
         f"",
     ]
+
+    # 调度健康面板(读run_log统计补跑情况)
+    log_path = f'{PAPER}/run_log.jsonl'
+    if os.path.exists(log_path):
+        rows = []
+        for ln in open(log_path).read().split('\n'):
+            if ln.strip():
+                try:
+                    rows.append(json.loads(ln))
+                except Exception:
+                    pass
+        recent = rows[-24:]
+        bf = [r for r in recent if r.get('backfilled')]
+        lines += [
+            "## 调度与补跑",
+            "",
+            f"- 累计运行: {state.get('run_count', 0)} 次 | 累计判定K线: {state.get('bars_evaluated_total', 0)} 根",
+            f"- 最近 {len(recent)} 次运行中漏跑补齐 {len(bf)} 次" +
+            (f" (最近一次 {str(bf[-1]['run_at'])[:16]}, 补 {bf[-1]['missed_bars']} 根K线)" if bf else " (调度连续, 无缺口)"),
+            "",
+            "| 运行时间 | 模式 | 处理根数 | 缺口中 | 信号 | 事件 | 净值 |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for r in recent[-6:]:
+            sig = (f"L{len(r.get('signals_L', []))}/S{len(r.get('signals_S', []))}"
+                   if (r.get('signals_L') or r.get('signals_S')) else "-")
+            ev = f"开{len(r.get('opens', []))}/平{len(r.get('closes', []))}"
+            lines.append(f"| {str(r['run_at'])[:16]} | {r.get('mode', '-')} | {r.get('bars_processed', 0)} | "
+                         f"{r.get('missed_bars', 0)} | {sig} | {ev} | {r.get('equity', 0):,.2f} |")
+        lines += [""]
+
     if events:
         lines += ["## 本次运行事件", ""] + [f"- {e}" for e in events] + [""]
     if trades:
