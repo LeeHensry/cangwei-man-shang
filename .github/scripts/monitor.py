@@ -5,11 +5,20 @@
 
 检查维度：
 1. 服务可用性  - /api/version 是否可响应（冷启动重试 3 次）
-2. 数据新鲜度  - K线/评分最新日期 vs 期望交易日（同步窗口内跳过）
+2. 数据新鲜度  - K线/评分最新日期 vs 期望交易日（同步窗口内、非交易日跳过）
 3. 数据完整性  - pool/klines/indicators/finance 数量是否在合理区间
 4. 信号合理性  - 最新评分信号分布是否异常（全部 sell）
 
 报警方式：发现问题时用 gh 创建 GitHub Issue（标题固定去重，已有 open Issue 则跳过）
+
+交易日感知（2026-10-08 修复）
+  原逻辑用「最近工作日 Mon–Fri」推期望日期，不认中国法定节假日。长假期间 K线停在节前
+  最后一个交易日不动，期望日期却一天天往前推，越过 FRESHNESS_ALERT_DAYS 后每小时误报，
+  导致 workflow 连续 12+ 次变红（issue #4 就是国庆期间留下的）。
+  现改为：判定当天非交易日则整体跳过新鲜度检查。判定优先级：
+    ① 周末 → 非交易日
+    ② 上证指数实时行情的时间戳（qt.gtimg.cn）→ 市场自己给的答案，最权威
+    ③ 都拿不到时回退到 CN_HOLIDAYS 表；仍不确定则按交易日处理但只告警不染红
 """
 
 import datetime
@@ -31,6 +40,17 @@ SYNC_WINDOW_START = "15:30"  # 北京时间收盘同步窗口，窗口内跳过�
 SYNC_WINDOW_END = "18:00"
 # -------------------------
 
+# A股法定休市日（备用判据；主判据是上证指数行情时间戳，故本表只在下述情况生效：
+# 行情接口不可达。每年年初需按国务院放假安排更新一次）
+CN_HOLIDAYS = {
+    # 2026 中秋 / 国庆（已由 2026-10 数据污染事故实际确认）
+    "2026-09-25",
+    "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
+}
+
+# 只有这些是真故障、值得把 workflow 染红；数据陈旧属于「要人看」而不是「服务挂了」
+FATAL_PROBLEMS = {"服务不可用", "监控接口异常"}
+
 
 def beijing_now():
     return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
@@ -40,6 +60,44 @@ def in_sync_window():
     now = beijing_now()
     t = now.strftime("%H:%M")
     return SYNC_WINDOW_START <= t <= SYNC_WINDOW_END
+
+
+def market_quote_date(timeout=20):
+    """上证指数的行情日期（腾讯接口 p[30] 时间戳）→ 'YYYY-MM-DD'；取不到返回 None
+
+    这是判断「今天是不是交易日」最权威也最省事的办法：直接问市场本身。
+    节假日接口会回吐上一个交易日的数据，日期自然不等于今天。
+    """
+    try:
+        req = urllib.request.Request("http://qt.gtimg.cn/q=sh000001",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        raw = urllib.request.urlopen(req, timeout=timeout).read().decode("gbk", errors="ignore")
+        p = raw.split('"')[1].split("~")
+        t = p[30]
+        if len(t) >= 8 and t[:8].isdigit():
+            return f"{t[:4]}-{t[4:6]}-{t[6:8]}"
+    except Exception as e:
+        print(f"ℹ️ 行情交易日判定不可用: {type(e).__name__}: {e}")
+    return None
+
+
+def trading_day_status(now):
+    """→ (是否交易日, 判定是否确定, 依据说明)
+
+    confirmed=False 表示没拿到市场数据、只能保守假设是交易日，此时新鲜度告警降级为
+    非致命（只写 Issue 不染红），避免误报。
+    """
+    d = now.date().isoformat()
+    if now.weekday() >= 5:
+        return False, True, "周末"
+    if d in CN_HOLIDAYS:
+        return False, True, "法定节假日（CN_HOLIDAYS）"
+    qd = market_quote_date()
+    if qd is None:
+        return True, False, "行情接口不可用，保守按交易日处理"
+    if qd == d:
+        return True, True, f"上证指数行情日期 {qd}"
+    return False, True, f"上证指数行情停在 {qd}，今日未开盘"
 
 
 def http_json(url, timeout=120):
@@ -132,6 +190,8 @@ def main():
     checked_at = beijing_now().strftime("%Y-%m-%d %H:%M")
     problems = []
     version = "unknown"
+    trading = True          # 供退出码判断：非交易日的数据陈旧不算故障
+    trading_confirmed = True
 
     # 1. 服务可用性
     ok, info = fetch_version()
@@ -155,8 +215,15 @@ def main():
         f = health.get("freshness", {})
         s = health.get("signals", {})
 
-        # 3. 数据新鲜度（同步窗口内跳过，避免误报）
-        if not in_sync_window():
+        # 3. 数据新鲜度（同步窗口内、非交易日跳过，避免长假误报）
+        trading, trading_confirmed, why = trading_day_status(beijing_now())
+        print(f"ℹ️ 交易日判定: {'是' if trading else '否'}（{why}）"
+              f"{'' if trading_confirmed else ' [判定不确定]'}")
+        if in_sync_window():
+            print("ℹ️ 同步窗口内，跳过新鲜度检查")
+        elif not trading:
+            print(f"ℹ️ 非交易日（{why}），跳过新鲜度检查")
+        else:
             for name, diff, latest in (("K线", f.get("kline_diff_days"), f.get("kline_latest")),
                                        ("评分", f.get("score_diff_days"), f.get("score_latest"))):
                 if diff is None:
@@ -164,8 +231,6 @@ def main():
                 elif diff >= FRESHNESS_ALERT_DAYS:
                     problems.append((f"{name}数据过期", f"最新 {latest}，期望 {f.get('expected')}，落后 {diff} 天"))
             print(f"ℹ️ 新鲜度: K线 {f.get('kline_diff_days')}天 / 评分 {f.get('score_diff_days')}天")
-        else:
-            print(f"ℹ️ 同步窗口内，跳过新鲜度检查")
 
         # 4. 数据完整性
         if db.get("pool", 0) < MIN_POOL:
@@ -196,7 +261,18 @@ def main():
             create_issue(build_body(problems, health or {}, version, checked_at))
         else:
             print("ℹ️ 已存在相同标题的 open Issue，跳过（避免刷屏）")
-        sys.exit(1)
+        # 染红与否：只有真故障才让 workflow 失败。数据陈旧走 Issue 通道即可——
+        # 原先把一切都 exit(1)，导致长假期间每小时变红，报警疲劳后真故障也会被忽略。
+        # 交易日判定不确定时（行情接口不可达）从宽处理，不因判定失败而误报红色。
+        fatal = [p for p in problems if p[0] in FATAL_PROBLEMS]
+        if not fatal:
+            fatal = [p for p in problems if trading and trading_confirmed
+                     and "数据过期" in p[0]]
+        if fatal:
+            print(f"❌ 致命问题 {len(fatal)} 个，workflow 标记失败: {[p[0] for p in fatal]}")
+            sys.exit(1)
+        print("⚠️ 仅非致命问题（已建 Issue），workflow 保持成功，避免报警疲劳")
+        sys.exit(0)
     else:
         print("✅ 全部健康")
         sys.exit(0)

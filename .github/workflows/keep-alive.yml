@@ -104,8 +104,11 @@ jobs:
                 -H "Content-Type: application/json" \
                 -d '{"step":"full-pipeline","full":true}')
               echo "$RESULT"
-              # 检查是否全部完成
-              if echo "$RESULT" | grep -q '"all-done"'; then
+              # 只有服务端明确返回 done=true 且没有 nextStep，才算完成。
+              # 不能再把 all-done 当作同步成功：历史数据达到累计阈值时，旧逻辑
+              # 会直接 all-done 空转，导致 K线/指标长期不更新。
+              DONE=$(echo "$RESULT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("true" if d.get("done") is True and d.get("nextStep") is None else "false")' 2>/dev/null || echo false)
+              if [ "$DONE" = "true" ]; then
                 echo "✅ Pipeline complete!"
                 break
               fi
