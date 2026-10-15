@@ -848,7 +848,9 @@ app.post('/api/sync/step', async (req, res) => {
       } else if (status.klineLatest !== dayjs().format('YYYYMMDD')) {
         // K线最新日期落后于今天：按新鲜度补增量，不能再用累计行数判断。
         nextStep = 'kline';
-        const r = await runStepKline(startTime, batchSize, req.body?.full);
+        // full-pipeline 是定时增量任务：固定走 60 天窗口，避免工作流传 full:true
+        // 时拉 730 天导致单次 HTTP 超时。730 天历史补数仍通过 step:kline 手动执行。
+        const r = await runStepKline(startTime, batchSize, false);
         stepResult = r;
       } else if (status.indicatorLatest !== status.klineLatest) {
         // 指标落后于K线：补算指标，不能只看累计指标总量。
