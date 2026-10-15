@@ -411,8 +411,12 @@ app.post('/api/sync/step', async (req, res) => {
         }
         
         // 优先尝试东方财富K线（含换手率）
-        const emPromises = batchCodes.map(code => 
-          emKline.getDailyKline(code, klineStart, klineEnd).catch(e => [])
+        const emPromises = batchCodes.map(code =>
+          emKline.getDailyKline(code, klineStart, klineEnd).catch(e => {
+            errors++;
+            console.error(`[step:kline] 东财失败 ${code}:`, e.message);
+            return [];
+          })
         );
         const emResults = await Promise.all(emPromises);
         
@@ -438,11 +442,15 @@ app.post('/api/sync/step', async (req, res) => {
             if (info) circMvMap[fc] = info;
           }
           
-          const tqPromises = fallbackCodes.map(code => 
-            tq.getDailyKline(code, 
-              dayjs(klineStart).format('YYYY-MM-DD'), 
+          const tqPromises = fallbackCodes.map(code =>
+            tq.getDailyKline(code,
+              dayjs(klineStart).format('YYYY-MM-DD'),
               dayjs(klineEnd).format('YYYY-MM-DD')
-            ).catch(e => [])
+            ).catch(e => {
+              errors++;
+              console.error(`[step:kline] 腾讯回退失败 ${code}:`, e.message);
+              return [];
+            })
           );
           const tqResults = await Promise.all(tqPromises);
           
@@ -837,13 +845,13 @@ app.post('/api/sync/step', async (req, res) => {
         // 执行一批指标计算
         const r = await runStepIndicators(startTime, batchSize * 3);
         stepResult = r;
-      } else if (status.klines < status.pool * 100) {
-        // K线不够→拉K线
+      } else if (status.klineLatest !== dayjs().format('YYYYMMDD')) {
+        // K线最新日期落后于今天：按新鲜度补增量，不能再用累计行数判断。
         nextStep = 'kline';
         const r = await runStepKline(startTime, batchSize, req.body?.full);
         stepResult = r;
-      } else if (status.indicators < status.pool && status.klines > 0) {
-        // 指标不够→算指标
+      } else if (status.indicatorLatest !== status.klineLatest) {
+        // 指标落后于K线：补算指标，不能只看累计指标总量。
         nextStep = 'indicators';
         const r = await runStepIndicators(startTime, batchSize * 3);
         stepResult = r;
@@ -908,7 +916,13 @@ async function getSyncStatus() {
   let crowdCount = 0;
   try { crowdCount = parseInt((await dbGet('SELECT COUNT(DISTINCT code) as c FROM crowding_score'))?.c || 0, 10); } catch(e) { /* 表可能已删除 */ }
   const financeCount = parseInt((await dbGet('SELECT COUNT(DISTINCT code) as c FROM financial_indicator'))?.c || 0, 10);
-  return { pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount, scores: scoreCount, crowding: crowdCount, finance: financeCount };
+  const klineLatest = (await dbGet('SELECT MAX(trade_date) as d FROM daily_kline'))?.d || null;
+  const indicatorLatest = (await dbGet('SELECT MAX(trade_date) as d FROM technical_indicators'))?.d || null;
+  return {
+    pool: poolCount, stocks: stockCount, klines: klineCount, indicators: indCount,
+    scores: scoreCount, crowding: crowdCount, finance: financeCount,
+    klineLatest, indicatorLatest,
+  };
 }
 
 // 辅助函数：执行一批K线同步
@@ -947,7 +961,7 @@ async function runStepKline(startTime, batchSize, full) {
         code: String(q.code).replace(/^(sh|sz|bj)/, ''), today, pe: q.pe
       }));
       if (valData.length > 0) await dbBatch(valData.map(r => ({ sql: `INSERT OR REPLACE INTO valuation (code,trade_date,pe) VALUES (?,?,?)`, args: [r.code, r.today, r.pe] })));
-    } catch(e) {}
+    } catch(e) { console.log('[runStepKline] 行情拉取失败:', e.message); }
   }
 
   while (state.offset < state.total && processed < batchSize && getTimeLeft(startTime) > 5000) {
@@ -959,9 +973,13 @@ async function runStepKline(startTime, batchSize, full) {
     }
     
     // 优先用东方财富K线（含换手率）
-    const emPromises = batchCodes.map(code => 
-      emKline.getDailyKline(code, klineStart, klineEnd).catch(e => [])
-    );
+          const emPromises = batchCodes.map(code =>
+            emKline.getDailyKline(code, klineStart, klineEnd).catch(e => {
+              errors++;
+              console.error(`[step:kline] 东财失败 ${code}:`, e.message);
+              return [];
+            })
+          );
     const emResults = await Promise.all(emPromises);
     
     // 对东方财富失败的，回退到腾讯+计算换手率
